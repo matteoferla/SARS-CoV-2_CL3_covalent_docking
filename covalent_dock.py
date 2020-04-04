@@ -60,6 +60,7 @@ class ConDock:
         if refine:
             self.refine_pose()
         self.pose.dump_pdb(f'holo_{self.name}.pdb')
+        self.score()
 
     def thiolate(self) -> Chem.Mol:
         thio = AllChem.ReplaceSubstructs(self.ori_mol,
@@ -243,6 +244,22 @@ class ConDock:
         relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 3)
         relax.set_movemap(movemap)
         relax.apply(self.pose)
+
+    def score(self):
+        split_pose = pyrosetta.Pose()
+        split_pose.assign(self.pose)
+        cys_pos = split_pose.pdb_info().pdb2pose(chain='A', res=145)
+        lig_pos = split_pose.pdb_info().pdb2pose(chain='B', res=1)
+        # RESCON: 305 LIG n-conn= 1 n-poly= 0 n-nonpoly= 1 conn# 1 22 145 3
+        split_pose.conformation().sever_chemical_bond(seqpos1=cys_pos, res1_resconn_index=3, seqpos2=lig_pos, res2_resconn_index=1)
+        xyz = pyrosetta.rosetta.numeric.xyzVector_double_t()
+        xyz.x = 500.0
+        xyz.y = 0.0
+        xyz.z = 0.0
+        for a in range(1, split_pose.residue(lig_pos).natoms() + 1):
+            split_pose.residue(lig_pos).set_xyz(a, split_pose.residue(lig_pos).xyz(a) + xyz)
+        scorefxn = pyrosetta.get_fa_scorefxn()
+        raise NotImplementedError('Finish up later...')
 
     @classmethod
     def create_apo(cls, template_pdbfilename: str):
