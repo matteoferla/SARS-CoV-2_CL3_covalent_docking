@@ -1,3 +1,18 @@
+########################################################################################################################
+
+__doc__ = \
+    """
+    Automated covalent ligand docking via PyRosetta.
+    """
+__author__ = "Matteo Ferla. [Github](https://github.com/matteoferla)"
+__email__ = "matteo.ferla@gmail.com"
+__date__ = "2020 A.D."
+__license__ = "MIT"
+__version__ = "1"
+__citation__ = ""
+
+########################################################################################################################
+
 import pyrosetta
 
 pyrosetta.init(extra_options='-load_PDB_components false -no_optH true')
@@ -11,6 +26,11 @@ from locking_singleton_pymol import GlobalPyMOL
 
 import os
 import molfile_to_params
+# see https://github.com/matteoferla/mol_to_params.py
+# or
+# https://www.well.ox.ac.uk/~matteo/molfile_to_params.zip
+
+
 import re
 from collections import defaultdict
 
@@ -19,7 +39,7 @@ class ConDock:
     apo_pdbfilename = 'apo.r.pdb'
     constraint_filename = 'cysBound.cst'
 
-    def __init__(self, name: str, smiles: str):
+    def __init__(self, name: str, smiles: str, refine:bool=True):
         self.name = name
         self.smiles = smiles
         # cached property
@@ -37,7 +57,8 @@ class ConDock:
         pdbblock = self.make_initial_pdb()
         self.pose = self.make_pose(pdbblock)
         self.dock_pose()
-        self.refine_pose()
+        if refine:
+            self.refine_pose()
         self.pose.dump_pdb(f'holo_{self.name}.pdb')
 
     def thiolate(self) -> Chem.Mol:
