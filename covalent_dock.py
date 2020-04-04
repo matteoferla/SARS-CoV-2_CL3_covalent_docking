@@ -35,7 +35,7 @@ import re
 from collections import defaultdict
 
 
-class ConDock:
+class CovDock:
     apo_pdbfilename = 'apo.r.pdb'
     constraint_filename = 'cysBound.cst'
 
