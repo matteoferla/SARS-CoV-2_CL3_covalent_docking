@@ -15,7 +15,7 @@ __citation__ = ""
 
 import pyrosetta
 
-pyrosetta.init(extra_options='-load_PDB_components false -no_optH true')
+pyrosetta.init(extra_options='-load_PDB_components false -no_optH true -relax:jump_move false') # -mute all
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdmolfiles
@@ -51,7 +51,7 @@ class CovDock:
         # last one because of substitution
         self.CX_idx, self.SX_idx = self.thio_mol.GetSubstructMatches(Chem.MolFromSmiles('C[S-]'))[-1]
         self.dethio_mol = self.dethiolate()
-        sdffile = self.name + '.sdf'
+        sdffile = f'{self.name}/{self.name}.sdf'
         self.save_confs(self.dethio_mol, sdffile)
         self.parameterise(sdffile)  # self.pdb_mol gets assigned.
         pdbblock = self.make_initial_pdb()
@@ -59,7 +59,7 @@ class CovDock:
         self.dock_pose()
         if refine:
             self.refine_pose()
-        self.pose.dump_pdb(f'holo_{self.name}.pdb')
+        self.pose.dump_pdb(f'{self.name}/holo_{self.name}.pdb')
         self.score = self.calculate_score()
 
     def thiolate(self) -> Chem.Mol:
@@ -139,21 +139,21 @@ class CovDock:
 
     def parameterise(self, infile: str) -> None:
         ## preventt append to preexisting
-        if os.path.exists(f'{self.name}_conformers.pdb'):
-            os.remove(f'{self.name}_conformers.pdb')
+        if os.path.exists(f'{self.name}/{self.name}_conformers.pdb'):
+            os.remove(f'{self.name}/{self.name}_conformers.pdb')
         ## make a params.
         molfile_to_params.run(infile,
                               conformers_in_one_file=True,
                               name='LIG',
                               amino_acid=None,
                               chain='B',
-                              pdb=self.name,
+                              pdb=f'{self.name}/{self.name}',
                               clobber=True)
         ## modify
-        self.pdb_mol = self.fix_pdb(self.name + '.pdb')
+        self.pdb_mol = self.fix_pdb(f'{self.name}/{self.name}.pdb')
         ### split into parts
         allparts = defaultdict(list)
-        with open(f'{self.name}.params') as r:
+        with open(f'{self.name}/{self.name}.params') as r:
             for line in r:
                 parts = line.split()
                 allparts[parts[0]].append(line)
@@ -177,17 +177,17 @@ class CovDock:
         allparts['ICOOR_INTERNAL'].append(self.get_icoor_from_ref())
         ordering = ['NAME', 'IO_STRING', 'TYPE', 'AA', 'ATOM', 'BOND_TYPE', 'CHI', 'CONNECT', 'NBR_ATOM', 'NBR_RADIUS',
                     'ICOOR_INTERNAL', 'PDB_ROTAMERS']
-        with open(f'{self.name}.params', 'w') as w:
+        with open(f'{self.name}/{self.name}.params', 'w') as w:
             for section in ordering:
                 for line in allparts[section]:
                     w.write(re.sub(name_of_CX + '(?!\w)', new_name, line))
 
-        with open(f'{self.name}_conformers.pdb') as r:
+        with open(f'{self.name}/{self.name}_conformers.pdb') as r:
             rotalib = r.read()
-        with open(f'{self.name}_conformers.pdb', 'w') as w:
+        with open(f'{self.name}/{self.name}_conformers.pdb', 'w') as w:
             w.write(re.sub(name_of_CX + '(?!\w)', new_name, rotalib))
         self.pdb_mol.GetAtomWithIdx(self.CX_idx).GetPDBResidueInfo().SetName(new_name)
-        Chem.MolToPDBFile(self.pdb_mol, self.name+'.pdb')
+        Chem.MolToPDBFile(self.pdb_mol, f'{self.name}/{self.name}.pdb')
         self._name_map[self.CX_idx] = new_name
         return None
 
@@ -223,18 +223,36 @@ class CovDock:
     def make_pose(self, pdbblock) -> pyrosetta.Pose:
         pose = pyrosetta.Pose()
         params_paths = pyrosetta.rosetta.utility.vector1_string()
-        params_paths.extend([f"{self.name}.params"])
+        params_paths.extend([f"{self.name}/{self.name}.params"])
         pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
         pyrosetta.rosetta.core.import_pose.pose_from_pdbstring(pose, pdbblock)
         return pose
 
     def dock_pose(self):
+        def add_weights(scorefxn):
+            stm = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
+            scorefxn.set_weight(stm.score_type_from_name("atom_pair_constraint"), 20)
+            scorefxn.set_weight(stm.score_type_from_name("angle_constraint"), 20)
+
         setup = pyrosetta.rosetta.protocols.constraint_movers.ConstraintSetMover()
         setup.constraint_file(self.constraint_filename)
         setup.apply(self.pose)
 
+        scorefxn = pyrosetta.get_fa_scorefxn()
+        add_weights(scorefxn)
+
+        movemap = pyrosetta.MoveMap()
+        v = self.get_ligand_selector().apply(self.pose)
+        n = self.get_neighbour_selector().apply(self.pose)
+        movemap.set_bb(allow_bb=v)
+        movemap.set_chi(allow_chi=n)
+        relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 1)
+        relax.set_movemap(movemap)
+        relax.apply(self.pose)
+
         pyrosetta.rosetta.protocols.docking.setup_foldtree(self.pose, 'A_B', pyrosetta.Vector1([1]))
         scorefxn = pyrosetta.create_score_function('ligand')
+        add_weights(scorefxn)
         restrict_to_focus = pyrosetta.rosetta.core.pack.task.operation.OperateOnResidueSubset(pyrosetta.rosetta.core.pack.task.operation.RestrictToRepackingRLT(),
                                                                                               self.get_neighbour_selector(), True)
         tf = pyrosetta.rosetta.core.pack.task.TaskFactory()
@@ -243,15 +261,11 @@ class CovDock:
         docking = pyrosetta.rosetta.protocols.docking.DockMCMProtocol()
         docking.set_task_factory(tf)
         docking.set_ignore_default_task(True)
-        stm = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
-        scorefxn.set_weight(stm.score_type_from_name("atom_pair_constraint"), 20)
-        scorefxn.set_weight(stm.score_type_from_name("angle_constraint"), 20)
-
         #docking.set_move_map()
         docking.set_scorefxn(scorefxn)
         docking.apply(self.pose)
 
-    def get_neighbour_selector(self):
+    def get_ligand_selector(self):
         ligand_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueNameSelector()
         ligand_selector.set_residue_name3('LIG')
         cys_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueIndexSelector()
@@ -259,6 +273,10 @@ class CovDock:
         and_selector = pyrosetta.rosetta.core.select.residue_selector.AndResidueSelector()
         and_selector.add_residue_selector(cys_selector)
         and_selector.add_residue_selector(ligand_selector)
+        return and_selector
+
+    def get_neighbour_selector(self):
+        and_selector = self.get_ligand_selector()
         NeighborhoodResidueSelector = pyrosetta.rosetta.core.select.residue_selector.NeighborhoodResidueSelector
         return NeighborhoodResidueSelector(and_selector, distance=5, include_focus_in_subset=True)
 
@@ -294,7 +312,14 @@ class CovDock:
         scorefxn = pyrosetta.get_fa_scorefxn()
         a = scorefxn(split_pose)
         b = scorefxn(self.pose)
-        return {'unbound': a, 'bound': b, 'difference': b - a}
+        alone = self.score_ligand_alone()
+        apo = -948.1531935517472
+        return {'xyz_unbound': a,
+                'bound': b,
+                'apo': apo,
+                'ligand': alone,
+                'xyz_difference': b - a,
+                'apo_difference': apo - a}
 
 
     @classmethod
@@ -316,6 +341,14 @@ class CovDock:
         with open(cls.constraint_filename, 'w') as w:
             w.write('AtomPair SG 145A CX 1B HARMONIC 1.8 0.2\n')
             w.write('Angle CB 145A SG 145A CX 1B HARMONIC 1.71 0.35\n')
+
+    def score_ligand_alone(self):
+        pose = pyrosetta.Pose()
+        params_paths = pyrosetta.rosetta.utility.vector1_string()
+        params_paths.extend([f'{self.name}/{self.name}.params'])
+        pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
+        pyrosetta.rosetta.core.import_pose.pose_from_file(pose, f'{self.name}/{self.name}.pdb')
+        return pyrosetta.get_fa_scorefxn()(pose)
         
 
     
