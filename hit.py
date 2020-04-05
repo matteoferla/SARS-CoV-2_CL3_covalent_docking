@@ -23,6 +23,7 @@ class Hit:
         self.name = name
         self.mol_file = os.path.join(self.hits_path, f'Mpro-{name}_0', f'Mpro-{name}_0.mol')
         self.pdb_file = os.path.join(self.hits_path, f'Mpro-{name}_0', f'Mpro-{name}_0.pdb')
+        self.mol2_file = os.path.join(self.hits_path, f'Mpro-{name}_0', f'Mpro-{name}_0.mol2')
         self.bound_file = os.path.join(self.hits_path, f'Mpro-{name}_0', f'Mpro-{name}_0_bound.pdb')
         self.relaxbound_file = os.path.join(self.work_path, f'Mpro-{name}_0_bound.r.pdb')
         self.apo_file = os.path.join(self.hits_path, f'Mpro-{name}_0', f'Mpro-{name}_0_apo.pdb')
@@ -52,8 +53,13 @@ class Hit:
             return self.name2idx[self.covalent_atomname]
         elif len(self.covalent_atomname) != 4:
             return self.name2idx[' '+self.covalent_atomname.rjust(3)]
-        else:
+        elif self.covalent_atomname.strip() in self.name2idx:
             return self.name2idx[self.covalent_atomname.strip()]
+        elif self.covalent_atomname.strip() in [x.strip() for x in self.name2idx]:
+            print(f'WEIRD ATOM NAME SPACING: >{self.covalent_atomname}<')
+            return {k.strip(): v for k,v in self.name2idx.items()}[self.covalent_atomname.strip()]
+        else:
+            raise ValueError(f'What is >{self.covalent_atomname}<')
 
 
     def load(self):
@@ -160,9 +166,9 @@ class Hit:
 
     def parameterise(self):
         #Chem.MolToPDBFile(self.mol, flavor=0, removeHs=False)
-        os.system(f'obabel {self.pdb_file} -O temp.mol2 -h')
+        #os.system(f'obabel {self.pdb_file} -O {self.pdb_file.replace(".pdb",".mol2")} -h')
         ## make a params.
-        molfile_to_params.run('temp.mol2',
+        molfile_to_params.run(self.mol2_file,
                               conformers_in_one_file=True,
                               name='LIG',
                               keep_names=True,

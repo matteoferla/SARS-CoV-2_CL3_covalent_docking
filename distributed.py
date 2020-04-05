@@ -19,6 +19,20 @@ def slack_me(msg):
     else:
         return False
 
+with open('scores.csv','w') as w:
+    dw =csv.DictWriter(w, fieldnames=['n_id',
+                                      'original_name',
+                                  'name',
+                                  'hits',
+                                  'silane_smiles',
+                                  'reacted_smiles',
+                                  'xyz_unbound',
+                                    'bound',
+                                    'apo',
+                                    'ligand',
+                                    'xyz_difference',
+                                    'apo_difference'])
+    dw.writeheader()
 
 def f(d):
     print('**********************************************')
@@ -26,10 +40,14 @@ def f(d):
     print('**********************************************')
     print('**********************************************')
     try:
+        if d['name'] in ('2_ACL', '3_ACL'):
+            return 0
         from substitute import OverCov
+        print(dict(name=d['name'], hits=d['hits'], smiles=d['silane_smiles']))
         c = OverCov(name=d['name'], hits=d['hits'], smiles=d['silane_smiles'])
         s = c.score
-        x = {k: str(v) for k,v in {**c, **d}.items()}
+        s = {}
+        x = {k: str(v) for k,v in {**s, **d}.items()}
         print(x)
         with open('scores.csv','a') as w:
             dw =csv.DictWriter(w, fieldnames=['n_id',

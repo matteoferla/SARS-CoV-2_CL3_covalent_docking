@@ -248,8 +248,10 @@ class CovDock:
         movemap.set_chi(allow_chi=n)
         relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 1)
         relax.set_movemap(movemap)
+        print(f'Settings set: {self.name}')
         relax.apply(self.pose)
-
+        print(f'FastRelax: {self.name}')
+        self.pose.dump_pdb(f'{self.name}/mid_{self.name}.pdb')
         pyrosetta.rosetta.protocols.docking.setup_foldtree(self.pose, 'A_B', pyrosetta.Vector1([1]))
         scorefxn = pyrosetta.create_score_function('ligand')
         add_weights(scorefxn)
@@ -264,6 +266,7 @@ class CovDock:
         #docking.set_move_map()
         docking.set_scorefxn(scorefxn)
         docking.apply(self.pose)
+        print(f'Dock: {self.name}')
 
     def get_ligand_selector(self):
         ligand_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueNameSelector()
@@ -310,16 +313,16 @@ class CovDock:
         for a in range(1, split_pose.residue(lig_pos).natoms() + 1):
             split_pose.residue(lig_pos).set_xyz(a, split_pose.residue(lig_pos).xyz(a) + xyz)
         scorefxn = pyrosetta.get_fa_scorefxn()
-        a = scorefxn(split_pose)
+        x = scorefxn(split_pose)
         b = scorefxn(self.pose)
         alone = self.score_ligand_alone()
         apo = -948.1531935517472
-        return {'xyz_unbound': a,
+        return {'xyz_unbound': x,
                 'bound': b,
                 'apo': apo,
                 'ligand': alone,
-                'xyz_difference': b - a,
-                'apo_difference': apo - a}
+                'xyz_difference': b - x,
+                'apo_difference': b - apo}
 
 
     @classmethod

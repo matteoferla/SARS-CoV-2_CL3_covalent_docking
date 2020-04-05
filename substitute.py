@@ -24,12 +24,14 @@ class OverCov(CovDock):
             warn('using regular CovDock as without hits.')
             super().__init__(smiles, name, refine=True)
         else:
+            print(f'Analysing: {name}')
             self.hits = [Hit(hit) for hit in hits]
             # cached property
             self._index_map = None
             self._name_map = None
             self._best_hit = None
             # operations
+            self.best_hit.relax()
             self.ori_mol = Chem.MolFromSmiles(self.smiles)
             self.thio_mol = self.thiolate()
             # last one because of substitution
@@ -39,17 +41,24 @@ class OverCov(CovDock):
             cid = self.align_probe_to_target()
             aligned_file = self.write_probe(cid)
             self.save_confs(self.dethio_mol, aligned_file)
+            print(f'SMILES converted: {name}')
             self.parameterise(aligned_file)  # self.pdb_mol gets assigned.
+            print(f'Parameterised: {name}')
             pdbblock = self.make_placed_pdb()
             open(f'{self.name}/pre_{self.name}.pdb','w').write(pdbblock)
             self.make_overlap_image()
             self.pose = self.make_pose(pdbblock)
+            print(f'PyRosetta loaded: {name}')
             self.dock_pose()
-            if refine:
-                self.refine_pose()
+            print(f'Docked: {name}')
+            # if refine:
+            #     self.refine_pose()
             self.pose.dump_pdb(f'{self.name}/holo_{self.name}.pdb')
+            print(f'Holo saved: {name}')
             self.snap_shot()
+            print(f'Snapped: {name}')
             self.score = self.calculate_score()
+            print(f'Done: {name}')
 
     def align_probe_to_target(self) -> int:  # implace
         """
@@ -163,7 +172,6 @@ class OverCov(CovDock):
     def make_placed_pdb(self):
         with GlobalPyMOL() as pymol:
             pymol.cmd.delete('*')
-            self.best_hit.relax()
             pymol.cmd.load(self.best_hit.relaxbound_file, 'apo')
             # fix drift
             pymol.cmd.load(self.best_hit.bound_file, 'ref')
@@ -210,9 +218,10 @@ class OverCov(CovDock):
 
     def snap_shot(self):
         with pymol2.PyMOL() as pymol:
-            pymol.cmd.load(f'{self.name}/{self.name}.pdb', 'pre')
+            pymol.cmd.load(f'{self.name}/pre_{self.name}.pdb', 'pre')
+            pymol.cmd.load(f'{self.name}/mid_{self.name}.pdb', 'mid')
             #pymol.cmd.load(f'pre_{self.name}.pdb', 'fudged')
-            pymol.cmd.load(f'holo_{self.name}.pdb', 'fixed')
+            pymol.cmd.load(f'{self.name}/holo_{self.name}.pdb', 'done')
             for hit in self.hits:
                 pymol.cmd.load(hit.bound_file)
             pymol.cmd.remove('solvent')
@@ -240,11 +249,21 @@ class OverCov(CovDock):
         return best_hit
 
 if __name__ == '__main__':
-    h = Hit('x0692')
-    print(h.score_ligand_alone())
     # # h.relax()
-    # c = OverCov(name='JAN-GHE-fd8-1',
-    #             smiles='CCNc1ncc(C#N)cc1CN1CCN(C(=O)C[SiH3])CC1',
-    #             hits=['x0305', 'x0692', 'x1249'],
-    #             refine=False)
-    # print(c.score)
+    c = OverCov(name='572_ACL',
+            smiles='Cc1ncnc(-c2ccc(CN3CCN(C(=O)C[SiH3])CC3)cc2F)c1C',
+            hits=['x0692', 'x0770', 'x0995'],
+            refine=False)
+    print(c.score)
+
+    # import argparse
+    #
+    # parser = argparse.ArgumentParser(description='???')
+    # parser.add_argument('name', type=str)
+    # parser.add_argument('smiles', type=str)
+    # parser.add_argument('hits', type=str)
+    # args = parser.parse_args()
+    # OverCov(name=args.name,
+    #         smiles=args.smiles,
+    #         hits=args.hits.split(','),
+    #         refine=False)
