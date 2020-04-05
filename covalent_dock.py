@@ -32,14 +32,14 @@ import molfile_to_params
 
 
 import re
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 
 
 class CovDock:
     apo_pdbfilename = 'apo.r.pdb'
     constraint_filename = 'cysBound.cst'
 
-    def __init__(self, name: str, smiles: str, refine:bool=True):
+    def __init__(self, smiles: str,name: str='ligand', refine:bool=True):
         self.name = name
         self.smiles = smiles
         # cached property
@@ -60,7 +60,7 @@ class CovDock:
         if refine:
             self.refine_pose()
         self.pose.dump_pdb(f'holo_{self.name}.pdb')
-        self.score()
+        self.score = self.calculate_score()
 
     def thiolate(self) -> Chem.Mol:
         thio = AllChem.ReplaceSubstructs(self.ori_mol,
@@ -70,7 +70,7 @@ class CovDock:
         thio.UpdatePropertyCache()
         thio = Chem.AddHs(thio)
         Chem.GetSSSR(thio)
-        AllChem.EmbedMultipleConfs(thio, numConfs=20)
+        AllChem.EmbedMultipleConfs(thio, numConfs=100)
         AllChem.UFFOptimizeMoleculeConfs(thio, maxIters=2000)
         AllChem.ComputeGasteigerCharges(thio)
         return thio
@@ -90,11 +90,23 @@ class CovDock:
         return True
 
     def thio2pdb_name(self, index: int) -> str:
+        """
+        Given an atom index of thio version. What is the atom name in params/PDB?
+
+        :param index: thio version atom index
+        :return: atom name in params
+        """
         if self._index_map is None:
             self._fill_maps()
         return self._name_map[index]
 
     def thio2pdb_index(self, index: int) -> int:
+        """
+        Given an atom index of thio version. What is the atom index of pdb version
+
+        :param index: atom index of thio version
+        :return: atom index of pdb version
+        """
         if self._index_map is None:
             self._fill_maps()
         return self._index_map[index]
@@ -147,7 +159,7 @@ class CovDock:
                 allparts[parts[0]].append(line)
         ### change names
         name_of_CX = self.thio2pdb_name(self.CX_idx)
-        new_name = ' CX'.ljust(len(name_of_CX))
+        new_name = ' CX '
         ### fix partial charges.
         for li in range(len(allparts['ATOM'])):
             line = allparts['ATOM'][li]
@@ -174,6 +186,9 @@ class CovDock:
             rotalib = r.read()
         with open(f'{self.name}_conformers.pdb', 'w') as w:
             w.write(re.sub(name_of_CX + '(?!\w)', new_name, rotalib))
+        self.pdb_mol.GetAtomWithIdx(self.CX_idx).GetPDBResidueInfo().SetName(new_name)
+        Chem.MolToPDBFile(self.pdb_mol, self.name+'.pdb')
+        self._name_map[self.CX_idx] = new_name
         return None
 
     def make_initial_pdb(self):
@@ -220,21 +235,39 @@ class CovDock:
 
         pyrosetta.rosetta.protocols.docking.setup_foldtree(self.pose, 'A_B', pyrosetta.Vector1([1]))
         scorefxn = pyrosetta.create_score_function('ligand')
-
+        restrict_to_focus = pyrosetta.rosetta.core.pack.task.operation.OperateOnResidueSubset(pyrosetta.rosetta.core.pack.task.operation.RestrictToRepackingRLT(),
+                                                                                              self.get_neighbour_selector(), True)
+        tf = pyrosetta.rosetta.core.pack.task.TaskFactory()
+        tf.push_back(pyrosetta.rosetta.core.pack.task.operation.RestrictToRepacking())
+        tf.push_back(restrict_to_focus)
+        docking = pyrosetta.rosetta.protocols.docking.DockMCMProtocol()
+        docking.set_task_factory(tf)
+        docking.set_ignore_default_task(True)
         stm = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
         scorefxn.set_weight(stm.score_type_from_name("atom_pair_constraint"), 20)
         scorefxn.set_weight(stm.score_type_from_name("angle_constraint"), 20)
-        docking = pyrosetta.rosetta.protocols.docking.DockMCMProtocol()
+
+        #docking.set_move_map()
         docking.set_scorefxn(scorefxn)
         docking.apply(self.pose)
 
-    def refine_pose(self):
-        ligand_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueIndexSelector()
-        ligand_selector.set_index(self.pose.pdb_info().pdb2pose(chain='A', res=145))
-        ligand_vector = ligand_selector.apply(self.pose)
+    def get_neighbour_selector(self):
+        ligand_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueNameSelector()
+        ligand_selector.set_residue_name3('LIG')
+        cys_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueIndexSelector()
+        cys_selector.set_index(self.pose.pdb_info().pdb2pose(chain='A', res=145))
+        and_selector = pyrosetta.rosetta.core.select.residue_selector.AndResidueSelector()
+        and_selector.add_residue_selector(cys_selector)
+        and_selector.add_residue_selector(ligand_selector)
         NeighborhoodResidueSelector = pyrosetta.rosetta.core.select.residue_selector.NeighborhoodResidueSelector
-        n_vector = NeighborhoodResidueSelector(ligand_vector, distance=6, include_focus_in_subset=True).apply(self.pose)
+        return NeighborhoodResidueSelector(and_selector, distance=5, include_focus_in_subset=True)
 
+
+    def get_neighbour_vector(self):
+        return self.get_neighbour_selector.apply(self.pose)
+
+    def refine_pose(self):
+        n_vector =  self.get_neighbour_vector()
         movemap = pyrosetta.MoveMap()
         movemap.set_bb(allow_bb=n_vector)
         movemap.set_chi(allow_chi=n_vector)
@@ -245,7 +278,7 @@ class CovDock:
         relax.set_movemap(movemap)
         relax.apply(self.pose)
 
-    def score(self):
+    def calculate_score(self):
         split_pose = pyrosetta.Pose()
         split_pose.assign(self.pose)
         cys_pos = split_pose.pdb_info().pdb2pose(chain='A', res=145)
@@ -259,7 +292,10 @@ class CovDock:
         for a in range(1, split_pose.residue(lig_pos).natoms() + 1):
             split_pose.residue(lig_pos).set_xyz(a, split_pose.residue(lig_pos).xyz(a) + xyz)
         scorefxn = pyrosetta.get_fa_scorefxn()
-        raise NotImplementedError('Finish up later...')
+        a = scorefxn(split_pose)
+        b = scorefxn(self.pose)
+        return {'unbound': a, 'bound': b, 'difference': b - a}
+
 
     @classmethod
     def create_apo(cls, template_pdbfilename: str):
