@@ -120,15 +120,15 @@ class OverCov(CovDock):
         overlap_hit, overlap_probe = self._get_overlaps(hit_mol)
         return {hit_at: probe_at for probe_at, hit_at in zip(overlap_probe, overlap_hit)}
 
-    def get_probe2hit_map(self, hit_mol) -> Dict:
-        overlap_hit, overlap_probe = self._get_overlaps(hit_mol)
+    def get_probe2hit_map(self, hit: Hit) -> Dict:
+        overlap_hit, overlap_probe = self._get_overlaps(hit)
         print(overlap_hit, overlap_probe)
         return {probe_at: hit_at for probe_at, hit_at in zip(overlap_probe, overlap_hit)}
 
-    def _get_overlaps(self, hit_mol):
-        common = self._get_common(hit_mol)
-        #Draw.MolToFile(common, f'{self.name}-{hit_mol.GetNumAtoms()}.png')
-        overlap_hit = hit_mol.GetSubstructMatch(common)
+    def _get_overlaps(self, hit: Hit):
+        common = self._get_common(hit.mol)
+        Draw.MolToFile(common, f'{self.name}-{hit.name}.png')
+        overlap_hit = hit.mol.GetSubstructMatch(common)
         overlap_probe = self.dethio_mol.GetSubstructMatch(common)
         return overlap_hit, overlap_probe
 
@@ -142,7 +142,7 @@ class OverCov(CovDock):
         overlapy = defaultdict(list)
         overlapz = defaultdict(list)
         for hit in self.hits:
-            probe2hit_map = self.get_probe2hit_map(hit.mol)
+            probe2hit_map = self.get_probe2hit_map(hit)
             hconf = hit.mol.GetConformers()[0]
             for pa, ha in probe2hit_map.items():
                 overlapx[pa].append(hconf.GetAtomPosition(ha).x)
