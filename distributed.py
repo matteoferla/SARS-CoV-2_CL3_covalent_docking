@@ -23,8 +23,8 @@ def g(h):
     from hit import Hit
     try:
         Hit(h)
-    except:
-        pass
+    except Exception as err:
+        print(f'{err.__class__.__name__}: {str(err)}')
 
 def f(d):
     print('**********************************************')
