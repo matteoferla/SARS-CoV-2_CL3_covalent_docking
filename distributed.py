@@ -2,6 +2,8 @@ from multiprocessing import Pool
 import csv, re, unicodedata, requests, os
 from warnings import warn
 
+from hit import Hit
+
 def slack_me(msg):
     """
     Send message to a slack webhook
@@ -20,7 +22,6 @@ def slack_me(msg):
         return False
 
 def g(h):
-    from hit import Hit
     try:
         Hit(h)
     except Exception as err:
