@@ -2,7 +2,6 @@ from multiprocessing import Pool
 import csv, re, unicodedata, requests, os
 from warnings import warn
 
-from hit import Hit
 
 def slack_me(msg):
     """
@@ -23,7 +22,8 @@ def slack_me(msg):
 
 def g(h):
     try:
-        Hit(h)
+        from hit import Hit
+        Hit(h).relax()
     except Exception as err:
         print(f'{err.__class__.__name__}: {str(err)}')
 
