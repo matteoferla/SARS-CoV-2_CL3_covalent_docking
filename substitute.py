@@ -283,15 +283,3 @@ if __name__ == '__main__':
             hits=['x0692', 'x0770', 'x0995'],
             refine=False)
     print(c.score)
-
-    # import argparse
-    #
-    # parser = argparse.ArgumentParser(description='???')
-    # parser.add_argument('name', type=str)
-    # parser.add_argument('smiles', type=str)
-    # parser.add_argument('hits', type=str)
-    # args = parser.parse_args()
-    # OverCov(name=args.name,
-    #         smiles=args.smiles,
-    #         hits=args.hits.split(','),
-    #         refine=False)

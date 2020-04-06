@@ -19,7 +19,9 @@ def slack_me(msg):
     else:
         return False
 
-
+def g(h):
+    from hit import Hit
+    Hit(h)
 
 def f(d):
     print('**********************************************')
@@ -71,6 +73,14 @@ def get_smiles(file):
     return data
 
 if __name__ == '__main__':
+    cores = int(os.environ['cores'])
+    path = '/well/brc/matteo/Mpro'
+    hits = [for folder in os.path.listdir(path) if os.path.isdir(os.path.join(path, folder))]
+    with Pool(cores) as p:
+        print(p.map(g, hits))
+
+
+if __name__ == '__main__' and 1==0:
     dataset = os.environ['dataset']
     cores = int(os.environ['cores'])
     with open(f'scores_{dataset}.csv', 'w') as w:

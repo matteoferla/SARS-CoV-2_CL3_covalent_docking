@@ -1,4 +1,6 @@
 from covalent_dock import CovDock
+from hit import Hit
+import os
 
 def main():
     original_filename = 'Mpro-x0072.pdb'
@@ -10,4 +12,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    #main()
+    Hit.hits_path = '/Users/matteo/Coding/rosettaOps/Mpro'
+    Hit.work_path = 'testin'
+    if not os.path.exists(Hit.work_path):
+        os.mkdir(Hit.work_path)
+    Hit.relax_cycles = 1
+    Hit('x0692').relax()

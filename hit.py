@@ -14,6 +14,7 @@ class Hit:
     work_path = 'templates'
     if not os.path.exists(work_path):
         os.mkdir(work_path)
+    relax_cycles = 15
 
     def __init__(self, name):
         self._covalent_atomname = None
@@ -28,6 +29,7 @@ class Hit:
         self.relaxbound_file = os.path.join(self.work_path, f'Mpro-{name}_0_bound.r.pdb')
         self.apo_file = os.path.join(self.hits_path, f'Mpro-{name}_0', f'Mpro-{name}_0_apo.pdb')
         self.params_file = os.path.join(self.work_path, f'{self.name}.params')
+        self.con_file = os.path.join(self.work_path, f'{self.name}.con')
         self.mol = self.load()
 
     def is_covalent(self):
@@ -57,7 +59,7 @@ class Hit:
             return self.name2idx[self.covalent_atomname.strip()]
         elif self.covalent_atomname.strip() in [x.strip() for x in self.name2idx]:
             print(f'WEIRD ATOM NAME SPACING: >{self.covalent_atomname}<')
-            return {k.strip(): v for k,v in self.name2idx.items()}[self.covalent_atomname.strip()]
+            return {k.strip(): v for k, v in self.name2idx.items()}[self.covalent_atomname.strip()]
         else:
             raise ValueError(f'What is >{self.covalent_atomname}<')
 
@@ -94,7 +96,6 @@ class Hit:
         distance = Chem.rdMolTransforms.GetBondLength(conf, 2, 3)
         angle = Chem.rdMolTransforms.GetAngleDeg(conf,1, 2, 3)
         torsion = Chem.rdMolTransforms.GetDihedralDeg(conf, 0, 1, 2, 3)
-        print(self.name2idx)
         n = [atom for atom in self.mol.GetAtomWithIdx(self.covalent_idx).GetNeighbors() if atom.GetSymbol != 'H'][0]
         m = [atom for atom in n.GetNeighbors() if atom.GetSymbol != 'H' and atom.GetIdx != self.covalent_idx][0]
         return f'ICOOR_INTERNAL   CONN1  {torsion:.3f} {180 - angle:.3f} {distance:.3f} ' + \
@@ -105,35 +106,20 @@ class Hit:
             warn('Preexisting relaxed')
             return None
         self.parameterise()
+        self.create_constraint_file()
         pose = self.load_pose()
+        setup = pyrosetta.rosetta.protocols.constraint_movers.ConstraintSetMover()
+        setup.constraint_file(self.con_file)
+        setup.apply(pose)
         self.do_relax(pose)
         pose.dump_pdb(self.relaxbound_file)
 
-    def dummy(self):
-        with pymol2.PyMOL() as pymol:
-            pymol.cmd.load(self.params_file.replace('.params','.pdb'), 'ligand')
-            pymol.cmd.fab('ACA', chain='A')
-            pymol.cmd.alter('resn LIG', 'chain="B"')
-            pymol.cmd.alter('resn LIG', 'resi="1"')
-            pymol.cmd.sort()
-            for atom in pymol.cmd.get_model('resn LIG').atom:
-                pymol.cmd.translate([random.random() for i in range(3)], f'resn LIG and name {atom.name}')
-            dummy = pymol.cmd.get_pdbstr('*')
-        if self.is_covalent():
-            dummy = f'LINK         SG  CYS A   2                {self.covalent_atomname} LIG B   1     1555   1555  1.8\n' + dummy
-        pyrosetta.init(extra_options='-load_PDB_components false -no_optH true -relax:jump_move true')
-        pose = pyrosetta.Pose()
-        params_paths = pyrosetta.rosetta.utility.vector1_string()
-        params_paths.extend([f"{self.name}.params"])
-        pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
-        pyrosetta.rosetta.core.import_pose.pose_from_pdbstring(pose, dummy)
-        pose.dump_pdb(f'test_{self.name}.0.pdb')
-        self.do_relax(pose)
-        pose.dump_pdb(f'test_{self.name}.1.pdb')
-        #pyrosetta.rosetta.protocols.docking.ConformerSwitchMover().apply(pose)
-        docking = pyrosetta.rosetta.protocols.docking.DockMCMProtocol().apply(pose)
-        pose.dump_pdb(f'test_{self.name}.2.pdb')
-
+    def create_constraint_file(self):
+        with open(self.con_file,'w') as w:
+            w.write('AtomPair SG 145A NE2 41A HARMONIC 3.8 0.2\n')
+            if self.is_covalent():
+                w.write(f'AtomPair SG 145A {self.covalent_atomname.strip()} 1B HARMONIC 1.8 0.2\n')
+                w.write(f'Angle CB 145A SG 145A {self.covalent_atomname.strip()} 1B HARMONIC 1.71 0.35\n')
 
     def load_pose(self):
         with pymol2.PyMOL() as pymol:
@@ -151,17 +137,21 @@ class Hit:
         params_paths.extend([self.params_file])
         pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
         pyrosetta.rosetta.core.import_pose.pose_from_pdbstring(pose, holo)
+        ## Force HIE
+        r = pose.pdb_info().pdb2pose(res=41, chain='A')
+        MutateResidue = pyrosetta.rosetta.protocols.simple_moves.MutateResidue
+        MutateResidue(target=r, new_res='HIS').apply(pose)
         return pose
 
     def do_relax(self, pose):
         scorefxn = pyrosetta.get_fa_scorefxn()
-        relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 5)
+        score_manager = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
+        scorefxn.set_weight(score_manager.score_type_from_name("atom_pair_constraint"), 20)
+        scorefxn.set_weight(score_manager.score_type_from_name("angle_constraint"), 20)
+        scorefxn.set_weight(score_manager.score_type_from_name("coordinate_constraint"), 1.0)
+        relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, self.relax_cycles)
         relax.constrain_relax_to_start_coords(True)
         relax.constrain_coords(True)
-        scorefxn = pyrosetta.create_score_function("ref2015")
-        score_manager = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
-        score_term = score_manager.score_type_from_name("coordinate_constraint")
-        scorefxn.set_weight(score_term, 1.0)
         relax.apply(pose)
 
     def parameterise(self):
@@ -190,7 +180,7 @@ class Hit:
         #     print(self.name2idx)
         #     gc = self.mol.GetAtomWithIdx(self.name2idx[name]).GetDoubleProp('_GasteigerCharge')
         #     allparts['ATOM'][li] = line.replace(rex.group(2) + rex.group(3), f'{gc:.2f}')
-        ### add connect
+        # ### add connect
         if self.is_covalent():
             allparts['CONNECT'].append(f'CONNECT {self.covalent_atomname}\n')
             allparts['ICOOR_INTERNAL'].append(self.get_icoor_from_ref())
@@ -209,4 +199,30 @@ class Hit:
         pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
         pyrosetta.rosetta.core.import_pose.pose_from_file(pose, self.pdb_file)
         return pyrosetta.get_fa_scorefxn()(pose)
+
+    def dummy(self):
+        with pymol2.PyMOL() as pymol:
+            pymol.cmd.load(self.params_file.replace('.params','.pdb'), 'ligand')
+            pymol.cmd.fab('ACA', chain='A')
+            pymol.cmd.alter('resn LIG', 'chain="B"')
+            pymol.cmd.alter('resn LIG', 'resi="1"')
+            pymol.cmd.sort()
+            for atom in pymol.cmd.get_model('resn LIG').atom:
+                pymol.cmd.translate([random.random() for i in range(3)], f'resn LIG and name {atom.name}')
+            dummy = pymol.cmd.get_pdbstr('*')
+        if self.is_covalent():
+            dummy = f'LINK         SG  CYS A   2                {self.covalent_atomname} LIG B   1     1555   1555  1.8\n' + dummy
+        pyrosetta.init(extra_options='-load_PDB_components false -no_optH true -relax:jump_move true')
+        pose = pyrosetta.Pose()
+        params_paths = pyrosetta.rosetta.utility.vector1_string()
+        params_paths.extend([f"{self.name}.params"])
+        pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
+        pyrosetta.rosetta.core.import_pose.pose_from_pdbstring(pose, dummy)
+        pose.dump_pdb(f'test_{self.name}.0.pdb')
+        self.do_relax(pose)
+        pose.dump_pdb(f'test_{self.name}.1.pdb')
+        #pyrosetta.rosetta.protocols.docking.ConformerSwitchMover().apply(pose)
+        docking = pyrosetta.rosetta.protocols.docking.DockMCMProtocol().apply(pose)
+        pose.dump_pdb(f'test_{self.name}.2.pdb')
+
 
