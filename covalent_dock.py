@@ -15,7 +15,7 @@ __citation__ = ""
 
 import pyrosetta
 
-pyrosetta.init(extra_options='-load_PDB_components false -no_optH true -relax:jump_move false') # -mute all
+pyrosetta.init(extra_options='-load_PDB_components false -no_optH true -relax:jump_move false -mute all')
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdmolfiles

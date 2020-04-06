@@ -82,20 +82,48 @@ class OverCov(CovDock):
         best_i = rmss.index(min(rmss))
         return best_i
 
-    def align_probe_to_targets(self) -> int:  # implace
-        common = self._get_common(self.best_hit.mol)
-        ### Align them
-        overlap_target = self.best_hit.mol.GetSubstructMatch(common)
-        for o, overlap_probe in enumerate(self.dethio_mol.GetSubstructMatches(common)):
-            atomMap = [(probe_at, target_at) for probe_at, target_at in zip(overlap_probe, overlap_target)]
-            rmss = [rdMolAlign.AlignMol(self.dethio_mol,
-                                        self.best_hit.mol,
-                                        prbCid=i,
-                                        atomMap=atomMap,
-                                        maxIters=500) for i in range(self.dethio_mol.GetNumConformers())]
-        # print(rmss)
-        best_i = rmss.index(min(rmss))
-        return best_i
+    # def align_probe_to_targets(self) -> int:  # implace
+    #     ### Align them all to the best.
+    #     common = self._get_common(self.best_hit.mol)
+    #     chits = [self._get_common(hit.mol) for hit in self.hits]
+    #     ohits = [self.best_hit.mol.GetSubstructMatch(common) for i in range(len(self.hits))]
+    #     overlap_target = self.best_hit.mol.GetSubstructMatch(common)
+    #     for o, overlap_probe in enumerate(self.dethio_mol.GetSubstructMatches(common)):
+    #         for i in range(self.dethio_mol.GetNumConformers()):
+    #
+    #
+    #     atomMap = [(probe_at, target_at) for probe_at, target_at in zip(overlap_probe, overlap_target)]
+    #     rmss = [rdMolAlign.AlignMol(self.dethio_mol,
+    #                                 self.best_hit.mol,
+    #                                 prbCid=i,
+    #                                 atomMap=atomMap,
+    #                                 maxIters=500) for i in range(self.dethio_mol.GetNumConformers())]
+    #     for i in range(self.dethio_mol.GetNumConformers()):
+    #         r_bests = []
+    #         r_best_atommaps = []
+    #         for hit in self.hits:
+    #             common = self._get_common(hit.mol)
+    #             overlap_target = self.best_hit.mol.GetSubstructMatch(common)
+    #             r_best = 9999999
+    #             r_best_atommap = []
+    #             for o, overlap_probe in enumerate(self.dethio_mol.GetSubstructMatches(common)):
+    #                 am = [(probe_at, target_at) for probe_at, target_at in zip(overlap_probe, overlap_target)]
+    #                 r = rdMolAlign.AlignMol(self.dethio_mol,
+    #                                         self.best_hit.mol,
+    #                                         prbCid=i,
+    #                                         atomMap=am,
+    #                                         maxIters=500)
+    #                 if r < r_best:
+    #                     r_best = r
+    #                     r_best_atommap = am
+    #             r_best_atommaps.append(r_best_atommap)
+    #             r_bests.append(r_bests)
+    #         rmss.append(sum(r_bests))
+    #     best_i = rmss.index(min(rmss))
+    #     print(rmss[best_i])
+    #     return best_i
+    #
+    # rdkit.Chem.rdMolAlign.GetBestRMS
 
     def _get_common(self, target: Chem.Mol) -> Chem.Mol:
         res = rdFMCS.FindMCS([self.dethio_mol, target]  # ,

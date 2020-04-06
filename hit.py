@@ -10,7 +10,7 @@ from collections import defaultdict
 from warnings import warn
 
 class Hit:
-    hits_path = '/Users/matteo/Coding/rosettaOps/Mpro'
+    hits_path = '/well/brc/matteo/Mpro'
     work_path = 'templates'
     if not os.path.exists(work_path):
         os.mkdir(work_path)
