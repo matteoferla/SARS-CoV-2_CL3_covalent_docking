@@ -75,7 +75,7 @@ def get_smiles(file):
 if __name__ == '__main__':
     cores = int(os.environ['cores'])
     path = '/well/brc/matteo/Mpro'
-    hits = [folder.replace('_0', '').replace('Mpro-','') for folder in os.path.listdir(path) if os.path.isdir(os.path.join(path, folder))]
+    hits = [folder.replace('_0', '').replace('Mpro-','') for folder in os.listdir(path) if os.path.isdir(os.path.join(path, folder))]
     with Pool(cores) as p:
         print(p.map(g, hits))
 
