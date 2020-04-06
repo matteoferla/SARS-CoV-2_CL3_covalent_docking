@@ -21,7 +21,10 @@ def slack_me(msg):
 
 def g(h):
     from hit import Hit
-    Hit(h)
+    try:
+        Hit(h)
+    except:
+        pass
 
 def f(d):
     print('**********************************************')
@@ -76,6 +79,7 @@ if __name__ == '__main__':
     cores = int(os.environ['cores'])
     path = '/well/brc/matteo/Mpro'
     hits = [folder.replace('_0', '').replace('Mpro-','') for folder in os.listdir(path) if os.path.isdir(os.path.join(path, folder))]
+    print(hits)
     with Pool(cores) as p:
         print(p.map(g, hits))
 
