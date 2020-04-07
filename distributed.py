@@ -91,7 +91,7 @@ def get_smiles(file):
     for line in open(file):
         #CCNc1ncc(CN)cc1CN1CCN(C(=O)C[SiH3])CC1	2_ACL
         smiles, name = line.split()
-        nid = int(name.split('_')[0])
+        #nid = int(name.split('_')[0]) Nir's ID is not longer used.
         data.append({**master[nid], 'silane_smiles': smiles, 'name': name.replace(' ', '_')})
     return data
 
