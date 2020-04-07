@@ -247,13 +247,17 @@ class OverCov(CovDock):
     def snap_shot(self):
         with pymol2.PyMOL() as pymol:
             pymol.cmd.load(f'{self.name}/pre_{self.name}.pdb', 'pre')
-            pymol.cmd.load(f'{self.name}/mid_{self.name}.pdb', 'mid')
-            #pymol.cmd.load(f'pre_{self.name}.pdb', 'fudged')
-            pymol.cmd.load(f'{self.name}/holo_{self.name}.pdb', 'done')
+            pymol.cmd.load(f'{self.name}/min1_{self.name}.pdb', 'min1')
+            pymol.cmd.load(f'{self.name}/min2_{self.name}.pdb', 'min2')
+            pymol.cmd.load(f'{self.name}/docked_{self.name}.pdb', 'docked')
             for hit in self.hits:
                 pymol.cmd.load(hit.bound_file)
+            pymol.cmd.load(self.best_hit.relaxbound_file, 'mintemplate')
+            pymol.cmd.align('mintemplate', 'pre')
             pymol.cmd.remove('solvent')
+            pymol.cmd.remove('resn DMS')
             pymol.cmd.show('sticks', 'resi 145')
+            pymol.cmd.show('lines', 'byres resn LIG around 4')
             pymol.cmd.zoom('resi 145 or resn LIG')
             pymol.cmd.save(f'{self.name}/{self.name}.pse')
 

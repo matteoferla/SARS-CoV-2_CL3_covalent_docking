@@ -42,16 +42,18 @@ def f(d):
         with open(f'scores_{dataset}.csv','a') as w:
             dw =csv.DictWriter(w, fieldnames=['n_id',
                                               'original_name',
-                                          'name',
-                                          'hits',
-                                          'silane_smiles',
-                                          'reacted_smiles',
-                                          'xyz_unbound',
-                                            'bound',
+                                              'name',
+                                              'hits',
+                                              'silane_smiles',
+                                              'reacted_smiles',
+                                              'xyz_unbound',
+                                              'bound',
                                             'apo',
-                                            'ligand',
+                                            'apriori_ligand',
+                                            'ligand_data',
                                             'xyz_difference',
                                             'apo_difference'])
+
             dw.writerow(x)
         #slack_me(d['name']+' - COMPLETE')
     except Exception as err:
@@ -76,7 +78,7 @@ def get_smiles(file):
         data.append({**master[nid], 'silane_smiles': smiles, 'name': name})
     return data
 
-if __name__ == '__main__':
+if __name__ == '__main__' and 1==0:
     cores = int(os.environ['cores'])
     path = '/well/brc/matteo/Mpro'
     hits = [folder.replace('_0', '').replace('Mpro-','') for folder in os.listdir(path) if os.path.isdir(os.path.join(path, folder))]
@@ -85,22 +87,23 @@ if __name__ == '__main__':
         print(p.map(g, hits))
 
 
-if __name__ == '__main__' and 1==0:
+if __name__ == '__main__':
     dataset = os.environ['dataset']
     cores = int(os.environ['cores'])
     with open(f'scores_{dataset}.csv', 'w') as w:
         dw = csv.DictWriter(w, fieldnames=['n_id',
-                                           'original_name',
-                                           'name',
-                                           'hits',
-                                           'silane_smiles',
-                                           'reacted_smiles',
-                                           'xyz_unbound',
-                                           'bound',
-                                           'apo',
-                                           'ligand',
-                                           'xyz_difference',
-                                           'apo_difference'])
+                                              'original_name',
+                                              'name',
+                                              'hits',
+                                              'silane_smiles',
+                                              'reacted_smiles',
+                                              'xyz_unbound',
+                                              'bound',
+                                            'apo',
+                                            'apriori_ligand',
+                                            'ligand_data',
+                                            'xyz_difference',
+                                            'apo_difference'])
         dw.writeheader()
     data = get_smiles(file=f'silane_smiles/{dataset}.smi')
     with Pool(cores) as p:

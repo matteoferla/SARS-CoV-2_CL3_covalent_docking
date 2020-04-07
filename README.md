@@ -2,6 +2,8 @@
 
 Pyrosetta pipeline to do covalent docking of ligands given a SMILES string with a '[SiH3]' as the linking atom*.
 
+This is for the [COVID moonshot project](https://covid.postera.ai/covid).
+
 	
 ## Make a template
 

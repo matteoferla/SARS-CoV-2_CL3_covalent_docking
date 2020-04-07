@@ -21,10 +21,13 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, rdmolfiles
 import pymol2
 
+
 from locking_singleton_pymol import GlobalPyMOL
 # pair_fit needs to be singleton.
 
 import os
+
+import json
 import molfile_to_params
 # see https://github.com/matteoferla/mol_to_params.py
 # or
@@ -59,7 +62,7 @@ class CovDock:
         self.dock_pose()
         if refine:
             self.refine_pose()
-        self.pose.dump_pdb(f'{self.name}/holo_{self.name}.pdb')
+        self.pose.dump_pdb(f'{self.name}/docked_{self.name}.pdb')
         self.score = self.calculate_score()
 
     def thiolate(self) -> Chem.Mol:
@@ -229,6 +232,7 @@ class CovDock:
         return pose
 
     def dock_pose(self):
+        ## constraints
         def add_weights(scorefxn):
             stm = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
             scorefxn.set_weight(stm.score_type_from_name("atom_pair_constraint"), 20)
@@ -237,10 +241,9 @@ class CovDock:
         setup = pyrosetta.rosetta.protocols.constraint_movers.ConstraintSetMover()
         setup.constraint_file(self.constraint_filename)
         setup.apply(self.pose)
-
         scorefxn = pyrosetta.get_fa_scorefxn()
         add_weights(scorefxn)
-
+        ### First relax
         movemap = pyrosetta.MoveMap()
         v = self.get_ligand_selector().apply(self.pose)
         n = self.get_neighbour_selector().apply(self.pose)
@@ -251,7 +254,18 @@ class CovDock:
         print(f'Settings set: {self.name}')
         relax.apply(self.pose)
         print(f'FastRelax: {self.name}')
-        self.pose.dump_pdb(f'{self.name}/mid_{self.name}.pdb')
+        self.pose.dump_pdb(f'{self.name}/min1_{self.name}.pdb')
+        with open(f'{self.name}/min1_{self.name}.json', 'w') as w:
+            json.dump(self.calculate_score(), w)
+        ### Second relax
+        movemap.set_bb(allow_bb=n)
+        relax.set_movemap(movemap)
+        relax.apply(self.pose)
+        print(f'FastRelax 2: {self.name}')
+        self.pose.dump_pdb(f'{self.name}/min2_{self.name}.pdb')
+        with open(f'{self.name}/min2_{self.name}.json', 'w') as w:
+            json.dump(self.calculate_score(), w)
+        ### Docking
         pyrosetta.rosetta.protocols.docking.setup_foldtree(self.pose, 'A_B', pyrosetta.Vector1([1]))
         scorefxn = pyrosetta.create_score_function('ligand')
         add_weights(scorefxn)
@@ -267,6 +281,8 @@ class CovDock:
         docking.set_scorefxn(scorefxn)
         docking.apply(self.pose)
         print(f'Dock: {self.name}')
+        with open(f'{self.name}/docked_{self.name}.json', 'w') as w:
+            json.dump(self.calculate_score(), w)
 
     def get_ligand_selector(self):
         ligand_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueNameSelector()
@@ -312,17 +328,18 @@ class CovDock:
         xyz.z = 0.0
         for a in range(1, split_pose.residue(lig_pos).natoms() + 1):
             split_pose.residue(lig_pos).set_xyz(a, split_pose.residue(lig_pos).xyz(a) + xyz)
-        scorefxn = pyrosetta.get_fa_scorefxn()
+        scorefxn = pyrosetta.rosetta.core.scoring.ScoreFunctionFactory.create_score_function("ref2015")
         x = scorefxn(split_pose)
         b = scorefxn(self.pose)
         alone = self.score_ligand_alone()
-        apo = -948.1531935517472
+        data = self.pose.energies().residue_total_energies_array()  # structured numpy array
+        i = lig_pos - 1  ##pose numbering is fortran style. while python is C++
+        ligand_data = {data.dtype.names[j]: data[i][j] for j in range(len(data.dtype))}
         return {'xyz_unbound': x,
                 'bound': b,
-                'apo': apo,
-                'ligand': alone,
-                'xyz_difference': b - x,
-                'apo_difference': b - apo}
+                'apriori_ligand': alone,
+                'ligand_data': ligand_data,
+                'xyz_difference': b - x}
 
 
     @classmethod
