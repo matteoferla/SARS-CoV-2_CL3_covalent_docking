@@ -81,18 +81,26 @@ def f(d):
 def get_smiles(file):
     master = {}
     for line in open('all_submissions.smi'):
+        if line.strip == '':
+            continue
         nid, smiles, oriname, hits = line.strip().split('\t')
         #1	Cc1ccc(OCC(=O)N2CCN(CCCCC(=O)Nc3cnccc3C)CC2)cc1	PET-SGC-fed-1	x0107
-        master[int(nid)] = {'reacted_smiles': smiles,
+        master[oriname.replace(' ', '_')] = {'reacted_smiles': smiles,
                             'n_id': int(nid),
                             'original_name': oriname.replace(' ', '_'),
                             'hits': hits.split(',')}
     data = []
     for line in open(file):
+        if line.strip == '':
+            continue
         #CCNc1ncc(CN)cc1CN1CCN(C(=O)C[SiH3])CC1	2_ACL
-        smiles, name = line.split()
+        smiles, name = line.strip().split()
         #nid = int(name.split('_')[0]) Nir's ID is not longer used.
-        data.append({**master[nid], 'silane_smiles': smiles, 'name': name.replace(' ', '_')})
+        pre = re.match('^(.*)_\w+$', name).group(1)
+        if pre not in master:
+            print(pre, re.match('^.*_(\w+)$', name).group(1))
+        else:
+            data.append({**master[pre], 'silane_smiles': smiles, 'name': name.replace(' ', '_')})
     return data
 
 if __name__ == '__main__' and 1==0:
