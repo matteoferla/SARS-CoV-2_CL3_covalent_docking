@@ -1,24 +1,48 @@
+########################################################################################################################
+
+__doc__ = \
+    """
+    ...
+    """
+__author__ = "Matteo Ferla. [Github](https://github.com/matteoferla)"
+__email__ = "matteo.ferla@gmail.com"
+__date__ = "2019 A.D."
+__license__ = "MIT"
+__version__ = "3"
+__citation__ = ""
+
+########################################################################################################################
+
+
 from typing import Dict, Union, List
+from warnings import warn
 
 try:
     from IPython.display import SVG, display
 except ImportError:
-    print('No Jupyter notebook installed.')
+    warn('No Jupyter notebook installed. `.draw_nicely` will not work.')
     SVG = lambda *args, **kwargs: print('Install IPython...')
     display = lambda *args, **kwargs: print('Install IPython...')
 
+try:
+    import pymol2
+except ImportError:
+    warn('No Pymol module installed. `.make_pse` will not work.')
+    pymol2 = None
+
 import numpy as np
+from collections import defaultdict
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdFMCS, rdMolAlign, rdmolops
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Geometry.rdGeometry import Point3D
 
-from collections import defaultdict
-import pymol2
 
 
-class Frankenfragment:
+##################################################################
+
+class Fragmenstein:
     """
     Given a RDKit molecule and a series of hits it makes a spatially stitched together version of the initial molecule based on the hits.
     The reason is to do place the followup compound to the hits as faithfully as possible regardless of the screaming forcefields.
@@ -44,10 +68,11 @@ class Frankenfragment:
         self.initial_mol = mol  # initial to-be-aligned mol, untouched.
         self.hits = hits  # list of hits
         self._debug_draw = debug_draw # Jupyter notebook only.
+        self.unmatched = []
         # derived attributes
         self.scaffold = self.merge_hits()  # merger of hits
         self.chimera = self.make_chimera()  # merger of hits but with atoms made to match the to-be-aligned mol
-        self.positioned_mol = self.place_probe()  # to-be-aligned is aligned!
+        self.positioned_mol = self.place_followup()  # to-be-aligned is aligned!
 
     def merge_hits(self) -> Chem.Mol:
         """
@@ -56,12 +81,26 @@ class Frankenfragment:
         :return: the rdkit.Chem.Mol object that will fill ``.scaffold``
         """
         scaffold = Chem.Mol(self.hits[0])
+        save_for_later = []
         for fragmentanda in self.hits[1:]:
-            pairs = self._fragment_pairs(scaffold, fragmentanda)
-            for anchor_index in pairs:
-                scaffold = self.merge(scaffold, fragmentanda,
-                                      anchor_index=anchor_index,
-                                      attachment_details=pairs[anchor_index])
+            try:
+                pairs = self._fragment_pairs(scaffold, fragmentanda)
+                for anchor_index in pairs:
+                    scaffold = self.merge(scaffold, fragmentanda,
+                                          anchor_index=anchor_index,
+                                          attachment_details=pairs[anchor_index])
+            except ConnectionError:
+                save_for_later.append(fragmentanda)
+        for fragmentanda in save_for_later:
+            try:
+                pairs = self._fragment_pairs(scaffold, fragmentanda)
+                for anchor_index in pairs:
+                    scaffold = self.merge(scaffold, fragmentanda,
+                                          anchor_index=anchor_index,
+                                          attachment_details=pairs[anchor_index])
+            except ConnectionError:
+                self.unmatched.append(fragmentanda.GetProp("_Name"))
+                warn(f'Hit {fragmentanda.GetProp("_Name")} has no connections! Skipping!')
         refined = self.posthoc_refine(scaffold)
         return refined
 
@@ -101,10 +140,11 @@ class Frankenfragment:
             scaffold = combo
         return scaffold
 
-    def _fragment_pairs(self, scaffold:Chem.Mol, fragmentanda:Chem.Mol) -> Dict[List[Dict]]:
+    def _fragment_pairs(self, scaffold:Chem.Mol, fragmentanda:Chem.Mol) -> Dict[int, List[Dict]]:
         A2B_mapping = self.get_positional_mapping(scaffold, fragmentanda)
         get_key = lambda d, v: list(d.keys())[list(d.values()).index(v)]
-
+        if len(A2B_mapping) == 0:
+            raise ConnectionError
         uniques = set(range(fragmentanda.GetNumAtoms())) - set(A2B_mapping.values())
         categories = self._categorise(fragmentanda, uniques)
         pairs = categories['pairs']
@@ -151,7 +191,7 @@ class Frankenfragment:
     def _categorise(self, mol:Chem.Mol, uniques:set) -> Dict[str, Union[set, Dict]]:
         """
         What do the novel atoms do in terms of connectivity.
-        Complicated dict output
+        Complicated dict output. Really ought to be SetProp of the atoms.
 
         * ``uniques`` are set of atoms to classify on
         * ``internals`` are unique atoms that are connected solely to unique atoms
@@ -222,16 +262,16 @@ class Frankenfragment:
                              ringMatchesRingOnly=True)
         common = Chem.MolFromSmarts(mcs.smartsString)
         scaffold_match = self.scaffold.GetSubstructMatch(common)
-        probe_match = self.initial_mol.GetSubstructMatch(common)
-        atomMap = [(probe_at, scaffold_at) for probe_at, scaffold_at in zip(probe_match, scaffold_match)]
-        assert probe_match, 'No matching structure? All dummy atoms'
+        followup_match = self.initial_mol.GetSubstructMatch(common)
+        atomMap = [(followup_at, scaffold_at) for followup_at, scaffold_at in zip(followup_match, scaffold_match)]
+        assert followup_match, 'No matching structure? All dummy atoms'
         if self._debug_draw:
             self.draw_nicely(common)
-        ## make the scaffold more like the probe to avoid weird matches.
+        ## make the scaffold more like the followup to avoid weird matches.
         chimera = Chem.RWMol(self.scaffold)
         for i in range(common.GetNumAtoms()):
             if common.GetAtomWithIdx(i).GetSymbol() == '*':  # dummies.
-                wanted = self.initial_mol.GetAtomWithIdx(probe_match[i])
+                wanted = self.initial_mol.GetAtomWithIdx(followup_match[i])
                 owned = self.scaffold.GetAtomWithIdx(scaffold_match[i])
                 chimera.ReplaceAtom(scaffold_match[i], Chem.Atom(wanted))
                 v = {'C': 4, 'N': 3, 'O': 2, 'S': 2}
@@ -241,10 +281,11 @@ class Frankenfragment:
         chimera.UpdatePropertyCache()
         return chimera
 
-    def place_probe(self) -> Chem.Mol:
+    def place_followup(self) -> Chem.Mol:
         # Note none of this malarkey: AllChem.MMFFOptimizeMolecule(ref)
         # prealignment
         sextant = Chem.Mol(self.initial_mol)
+        Chem.SanitizeMol(sextant)
         AllChem.EmbedMolecule(sextant)
         AllChem.MMFFOptimizeMolecule(sextant)
         mcs = rdFMCS.FindMCS([self.scaffold, self.initial_mol],
@@ -252,15 +293,15 @@ class Frankenfragment:
                              bondCompare=rdFMCS.BondCompare.CompareOrder)
         common = Chem.MolFromSmarts(mcs.smartsString)
         scaffold_match = self.scaffold.GetSubstructMatch(common)
-        probe_match = self.initial_mol.GetSubstructMatch(common)
-        atomMap = [(probe_at, scaffold_at) for probe_at, scaffold_at in zip(probe_match, scaffold_match)]
-        assert probe_match, 'No matching structure? All dummy atoms'
+        followup_match = self.initial_mol.GetSubstructMatch(common)
+        atomMap = [(followup_at, scaffold_at) for followup_at, scaffold_at in zip(followup_match, scaffold_match)]
+        assert followup_match, 'No matching structure? All dummy atoms'
         rdMolAlign.AlignMol(sextant, self.scaffold, atomMap=atomMap, maxIters=500)
         if self._debug_draw:
             self.draw_nicely(self.initial_mol)
             self.draw_nicely(self.scaffold)
             self.draw_nicely(common)
-            print('probe/mobile/candidate', probe_match)
+            print('followup/probe/mobile/candidate', followup_match)
             print('scaffold/ref', scaffold_match)
 
         putty = Chem.Mol(sextant)
@@ -310,15 +351,32 @@ class Frankenfragment:
     def make_pse(self, filename='test.pse'):
         assert '.pse' in filename, 'Must be a pymol pse extension!'
         with pymol2.PyMOL() as pymol:
-            pymol.cmd.bg_color('white')
+            tints = iter(['wheat', 'palegreen', 'lightblue', 'paleyellow', 'lightpink', 'palecyan', 'lightorange', 'bluewhite'])
+            #pymol.cmd.bg_color('white')
             for h, hit in enumerate(self.hits):
                 pymol.cmd.read_molstr(Chem.MolToMolBlock(hit, kekulize=False), f'hit{h}')
+                pymol.cmd.color(next(tints), f'hit{h} and name C*')
             pymol.cmd.read_molstr(Chem.MolToMolBlock(self.scaffold, kekulize=False), f'frankenfragment')
+            pymol.cmd.color('tv_blue', f'frankenfragment and name C*')
             pymol.cmd.read_molstr(Chem.MolToMolBlock(self.chimera, kekulize=False), f'chimera')
-            pymol.cmd.read_molstr(Chem.MolToMolBlock(self.positioned_mol, kekulize=False), f'probe')
+            pymol.cmd.color('cyan', f'chimera and name C*')
+            pymol.cmd.read_molstr(Chem.MolToMolBlock(self.positioned_mol, kekulize=False), f'followup')
+            pymol.cmd.color('tv_green', f'followup and name C*')
+            pymol.cmd.hide('sticks')
+            pymol.cmd.hide('cartoon') # there should not be....
+            pymol.cmd.show('lines', 'not polymer')
+            pymol.cmd.show('sticks', 'followup or chimera')
             pymol.cmd.save(filename)
 
     def draw_nicely(self, mol, **kwargs):
+        """
+        Draw with atom indices for Jupyter notebooks.
+
+
+        :param mol:
+        :param kwargs: Key value pairs get fed into ``PrepareAndDrawMolecule``.
+        :return:
+        """
         d = rdMolDraw2D.MolDraw2DSVG(400, 400)
         d.drawOptions().addAtomIndices = True
         d.drawOptions().addStereoAnnotation = True
@@ -343,8 +401,10 @@ class Frankenfragment:
             else:
                 print(f'No overlap? {A2B}')
 
+def test():
+    hits = [Chem.MolFromMolFile(f'../Mpro/Mpro-{i}_0/Mpro-{i}_0.mol') for i in ('x0692', 'x0305', 'x1249')]
+    followup = Chem.MolFromSmiles('CCNc1nc(CCS)c(C#N)cc1CN1C(CCS)CN(C(C)=O)CC1')
+    Fragmenstein(followup, hits).make_pse('test.pse')
 
 if __name__ == '__main__':
-    hits = [Chem.MolFromMolFile(f'../Mpro/Mpro-{i}_0/Mpro-{i}_0.mol') for i in ('x0692', 'x0305', 'x1249')]
-    probe = Chem.MolFromSmiles('CCNc1nc(CCS)c(C#N)cc1CN1C(CCS)CN(C(C)=O)CC1')
-    Frankenfragment(probe, hits).make_pse('123.pse')
+    test()

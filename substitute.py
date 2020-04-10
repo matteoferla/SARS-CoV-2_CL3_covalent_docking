@@ -6,10 +6,12 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolAlign, rdmolfiles, rdFMCS, Draw
 
 import molfile_to_params
-import os, re, shutil, random
+import os, re, shutil, random, json
 from collections import defaultdict
 from warnings import warn
 
+from fragmenstein import Fragmenstein
+from egor import Egor
 
 class OverCov(CovDock):
     hits_path = '/Users/matteo/Coding/rosettaOps/Mpro'
@@ -30,6 +32,7 @@ class OverCov(CovDock):
             self._index_map = None
             self._name_map = None
             self._best_hit = None
+            self.notebook = {}
             # operations
             self.best_hit.relax()
             self.ori_mol = Chem.MolFromSmiles(self.smiles)
@@ -44,11 +47,15 @@ class OverCov(CovDock):
             print(f'SMILES converted: {name}')
             self.parameterise(aligned_file)  # self.pdb_mol gets assigned.
             print(f'Parameterised: {name}')
-            pdbblock = self.make_placed_pdb()
+            #pdbblock = self.make_placed_pdb()
+            self.fragmenstein = self.make_fragmenstein()
+            pdbblock = self.place_fragmenstein()
             open(f'{self.name}/pre_{self.name}.pdb','w').write(pdbblock)
             self.make_overlap_image()
             self.pose = self.make_pose(pdbblock)
             print(f'PyRosetta loaded: {name}')
+            self.egor = self.call_egor()
+            print(f'EM: {name}')
             self.dock_pose()
             print(f'Docked: {name}')
             # if refine:
@@ -58,6 +65,7 @@ class OverCov(CovDock):
             self.snap_shot()
             print(f'Snapped: {name}')
             self.score = self.calculate_score()
+            json.dump(self.notebook, open(f'{self.name}/{self.name}.json'))
             print(f'Done: {name}')
 
     def align_probe_to_target(self) -> int:  # implace
@@ -81,49 +89,6 @@ class OverCov(CovDock):
         # print(rmss)
         best_i = rmss.index(min(rmss))
         return best_i
-
-    # def align_probe_to_targets(self) -> int:  # implace
-    #     ### Align them all to the best.
-    #     common = self._get_common(self.best_hit.mol)
-    #     chits = [self._get_common(hit.mol) for hit in self.hits]
-    #     ohits = [self.best_hit.mol.GetSubstructMatch(common) for i in range(len(self.hits))]
-    #     overlap_target = self.best_hit.mol.GetSubstructMatch(common)
-    #     for o, overlap_probe in enumerate(self.dethio_mol.GetSubstructMatches(common)):
-    #         for i in range(self.dethio_mol.GetNumConformers()):
-    #
-    #
-    #     atomMap = [(probe_at, target_at) for probe_at, target_at in zip(overlap_probe, overlap_target)]
-    #     rmss = [rdMolAlign.AlignMol(self.dethio_mol,
-    #                                 self.best_hit.mol,
-    #                                 prbCid=i,
-    #                                 atomMap=atomMap,
-    #                                 maxIters=500) for i in range(self.dethio_mol.GetNumConformers())]
-    #     for i in range(self.dethio_mol.GetNumConformers()):
-    #         r_bests = []
-    #         r_best_atommaps = []
-    #         for hit in self.hits:
-    #             common = self._get_common(hit.mol)
-    #             overlap_target = self.best_hit.mol.GetSubstructMatch(common)
-    #             r_best = 9999999
-    #             r_best_atommap = []
-    #             for o, overlap_probe in enumerate(self.dethio_mol.GetSubstructMatches(common)):
-    #                 am = [(probe_at, target_at) for probe_at, target_at in zip(overlap_probe, overlap_target)]
-    #                 r = rdMolAlign.AlignMol(self.dethio_mol,
-    #                                         self.best_hit.mol,
-    #                                         prbCid=i,
-    #                                         atomMap=am,
-    #                                         maxIters=500)
-    #                 if r < r_best:
-    #                     r_best = r
-    #                     r_best_atommap = am
-    #             r_best_atommaps.append(r_best_atommap)
-    #             r_bests.append(r_bests)
-    #         rmss.append(sum(r_bests))
-    #     best_i = rmss.index(min(rmss))
-    #     print(rmss[best_i])
-    #     return best_i
-    #
-    # rdkit.Chem.rdMolAlign.GetBestRMS
 
     def _get_common(self, target: Chem.Mol) -> Chem.Mol:
         res = rdFMCS.FindMCS([self.dethio_mol, target]  # ,
@@ -197,6 +162,49 @@ class OverCov(CovDock):
             svg = drawer.GetDrawingText()
             open(f'{self.name}/{self.name}@{hit.name}.svg', 'w').write(svg)
 
+
+
+    def make_fragmenstein(self):
+        ff = Fragmenstein(self.dethio_mol, [h.mol for h in self.hits])
+        Chem.MolToMolFile(ff.scaffold, f'{self.name}/scaffold.fragmenstein.mol', kekulize=False)
+        Chem.MolToMolFile(ff.chimera, f'{self.name}/chimera.fragmenstein.mol', kekulize=False)
+        Chem.MolToMolFile(ff.positioned_mol, f'{self.name}/{self.name}.fragmenstein.mol', kekulize=False)
+        return ff
+
+    def place_fragmenstein(self):
+        for ma, pa in zip(self.fragmenstein.positioned_mol.GetAtoms(), self.pdb_mol.GetAtoms()):
+            assert ma.GetSymbol() == pa.GetSymbol(), f'The indices do not align! {ma.GetIdx()}:{ma.GetSymbol()} vs. {pa.GetIdx()}:{pa.GetSymbol()}'
+            ma.SetMonomerInfo(pa.GetPDBResidueInfo())
+        Chem.AddHs(self.fragmenstein.positioned_mol)
+        with GlobalPyMOL() as pymol:
+            pymol.cmd.delete('*')
+            pymol.cmd.load(self.best_hit.relaxbound_file, 'apo')
+            # fix drift
+            pymol.cmd.load(self.best_hit.bound_file, 'ref')
+            pymol.cmd.align('apo', 'ref')
+            pymol.cmd.delete('ref')
+            pymol.cmd.remove('resn LIG')
+            # distort positions
+            pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'scaffold')
+            pymol.cmd.save(f'{self.name}/{self.name}.scaffold.pdb')
+            pymol.cmd.delete('scaffold')
+            pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'ligand')
+            pdbblock = pymol.cmd.get_pdbstr('*')
+            pymol.cmd.delete('*')
+        return 'LINK         SG  CYS A 145                 CX  LIG B   1     1555   1555  1.8\n' + pdbblock
+
+    def call_egor(self):
+        egor = Egor(pose=self.pose,
+                    constraint_file=self.constraint_filename,
+                    ligand_residue='LIG',
+                    key_residues=['145A']
+                    )
+        self.notebook['pre-min'] = egor.ligand_score()
+        egor.minimise(10)
+        self.notebook['post-min'] = egor.ligand_score()
+        self.pose.dump_pdb(f'{self.name}/min1_{self.name}.pdb')
+        return egor
+
     def make_placed_pdb(self):
         with GlobalPyMOL() as pymol:
             pymol.cmd.delete('*')
@@ -246,13 +254,15 @@ class OverCov(CovDock):
 
     def snap_shot(self):
         with pymol2.PyMOL() as pymol:
+            pymol.cmd.bg_color('white')
             pymol.cmd.load(f'{self.name}/pre_{self.name}.pdb', 'pre')
-            pymol.cmd.load(f'{self.name}/min1_{self.name}.pdb', 'min1')
-            pymol.cmd.load(f'{self.name}/min2_{self.name}.pdb', 'min2')
-            pymol.cmd.load(f'{self.name}/docked_{self.name}.pdb', 'docked')
+            for k in ('min1','min2', 'repacked', 'docked'):
+                pymol.cmd.load(f'{self.name}/{k}_{self.name}.pdb', k)
+                pymol.cmd.align(k, 'pre')
             for hit in self.hits:
                 pymol.cmd.load(hit.bound_file)
             pymol.cmd.load(self.best_hit.relaxbound_file, 'mintemplate')
+            pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'scaffold')
             pymol.cmd.align('mintemplate', 'pre')
             pymol.cmd.remove('solvent')
             pymol.cmd.remove('resn DMS')
@@ -281,9 +291,15 @@ class OverCov(CovDock):
         return best_hit
 
 if __name__ == '__main__':
+    Hit.hits_path = '../Mpro'
+    OverCov.hits_path = '../Mpro'
     # # h.relax()
-    c = OverCov(name='572_ACL',
-            smiles='Cc1ncnc(-c2ccc(CN3CCN(C(=O)C[SiH3])CC3)cc2F)c1C',
-            hits=['x0692', 'x0770', 'x0995'],
-            refine=False)
+    # c = OverCov(name='572_ACL',
+    #         smiles='Cc1ncnc(-c2ccc(CN3CCN(C(=O)C[SiH3])CC3)cc2F)c1C',
+    #         hits=['x0692', 'x0770', 'x0995'],
+    #         refine=False)
+    c = OverCov(name='2_ACL',
+                        smiles='CCNc1ncc(C#N)cc1CN1CCN(C(=O)C[SiH3])CC1',
+                        hits=('x0692', 'x0305', 'x1249'),
+                        refine=False)
     print(c.score)

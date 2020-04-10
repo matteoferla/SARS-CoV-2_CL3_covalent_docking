@@ -27,7 +27,6 @@ from locking_singleton_pymol import GlobalPyMOL
 
 import os
 
-import json
 import molfile_to_params
 # see https://github.com/matteoferla/mol_to_params.py
 # or
@@ -48,6 +47,7 @@ class CovDock:
         # cached property
         self._index_map = None
         self._name_map = None
+        self.notebook = {}
         # operations
         self.ori_mol = Chem.MolFromSmiles(self.smiles)
         self.thio_mol = self.thiolate()
@@ -62,7 +62,6 @@ class CovDock:
         self.dock_pose()
         if refine:
             self.refine_pose()
-        self.pose.dump_pdb(f'{self.name}/docked_{self.name}.pdb')
         self.score = self.calculate_score()
 
     def thiolate(self) -> Chem.Mol:
@@ -247,24 +246,25 @@ class CovDock:
         movemap = pyrosetta.MoveMap()
         v = self.get_ligand_selector().apply(self.pose)
         n = self.get_neighbour_selector().apply(self.pose)
-        movemap.set_bb(allow_bb=v)
-        movemap.set_chi(allow_chi=n)
-        relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 1)
-        relax.set_movemap(movemap)
-        print(f'Settings set: {self.name}')
-        relax.apply(self.pose)
-        print(f'FastRelax: {self.name}')
-        self.pose.dump_pdb(f'{self.name}/min1_{self.name}.pdb')
-        with open(f'{self.name}/min1_{self.name}.json', 'w') as w:
-            json.dump(self.calculate_score(), w)
-        ### Second relax
         movemap.set_bb(allow_bb=n)
+        movemap.set_chi(allow_chi=n)
+        relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 10)
+        relax.set_movemap_disables_packing_of_fixed_chi_positions(True)
         relax.set_movemap(movemap)
-        relax.apply(self.pose)
         print(f'FastRelax 2: {self.name}')
         self.pose.dump_pdb(f'{self.name}/min2_{self.name}.pdb')
-        with open(f'{self.name}/min2_{self.name}.json', 'w') as w:
-            json.dump(self.calculate_score(), w)
+        self.notebook['post-min2'] = self.calculate_score()
+        ## repack
+        operation = pyrosetta.rosetta.core.pack.task.operation
+        allow = operation.RestrictToRepackingRLT()
+        restrict_to_focus = operation.OperateOnResidueSubset(allow,self.get_ligand_selector(), True)
+        tf = pyrosetta.rosetta.core.pack.task.TaskFactory()
+        tf.push_back(operation.PreventRepacking())
+        tf.push_back(restrict_to_focus)
+        packer = pyrosetta.rosetta.protocols.minimization_packing.PackRotamersMover(scorefxn)
+        packer.task_factory(tf)
+        packer.apply(self.pose)
+        self.pose.dump_pdb(f'{self.name}/repacked_{self.name}.pdb')
         ### Docking
         pyrosetta.rosetta.protocols.docking.setup_foldtree(self.pose, 'A_B', pyrosetta.Vector1([1]))
         scorefxn = pyrosetta.create_score_function('ligand')
@@ -281,23 +281,23 @@ class CovDock:
         docking.set_scorefxn(scorefxn)
         docking.apply(self.pose)
         print(f'Dock: {self.name}')
-        with open(f'{self.name}/docked_{self.name}.json', 'w') as w:
-            json.dump(self.calculate_score(), w)
+        self.notebook['docked'] = self.calculate_score()
+        self.pose.dump_pdb(f'{self.name}/docked_{self.name}.pdb')
 
     def get_ligand_selector(self):
         ligand_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueNameSelector()
         ligand_selector.set_residue_name3('LIG')
         cys_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueIndexSelector()
         cys_selector.set_index(self.pose.pdb_info().pdb2pose(chain='A', res=145))
-        and_selector = pyrosetta.rosetta.core.select.residue_selector.AndResidueSelector()
+        and_selector = pyrosetta.rosetta.core.select.residue_selector.OrResidueSelector()
         and_selector.add_residue_selector(cys_selector)
         and_selector.add_residue_selector(ligand_selector)
         return and_selector
 
-    def get_neighbour_selector(self):
+    def get_neighbour_selector(self, distance=7):
         and_selector = self.get_ligand_selector()
         NeighborhoodResidueSelector = pyrosetta.rosetta.core.select.residue_selector.NeighborhoodResidueSelector
-        return NeighborhoodResidueSelector(and_selector, distance=5, include_focus_in_subset=True)
+        return NeighborhoodResidueSelector(and_selector, distance=distance, include_focus_in_subset=True)
 
 
     def get_neighbour_vector(self):
@@ -308,7 +308,6 @@ class CovDock:
         movemap = pyrosetta.MoveMap()
         movemap.set_bb(allow_bb=n_vector)
         movemap.set_chi(allow_chi=n_vector)
-
         scorefxn = pyrosetta.get_fa_scorefxn()
         print(scorefxn)
         relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 3)

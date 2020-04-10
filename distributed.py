@@ -36,45 +36,45 @@ def f(d):
         from substitute import OverCov
         print(dict(name=d['name'], hits=d['hits'], smiles=d['silane_smiles']))
         c = OverCov(name=d['name'], hits=d['hits'], smiles=d['silane_smiles'])
-        s = c.score
-        x = {k: str(v) for k,v in {**s, **d}.items()}
-        print(x)
-        with open(f'scores_{dataset}.csv','a') as w:
-            dw =csv.DictWriter(w, fieldnames=['n_id',
-                                              'original_name',
-                                              'name',
-                                              'hits',
-                                              'silane_smiles',
-                                              'reacted_smiles',
-                                              'xyz_unbound',
-                                              'bound',
-                                            'apo',
-                                            'apriori_ligand',
-                                            'ligand_data',
-                                            'xyz_difference',
-                                            'apo_difference'])
+        # s = c.score
+        # x = {k: str(v) for k,v in {**s, **d}.items()}
+        # print(x)
+        # with open(f'scores_{dataset}.csv','a') as w:
+        #     dw =csv.DictWriter(w, fieldnames=['n_id',
+        #                                       'original_name',
+        #                                       'name',
+        #                                       'hits',
+        #                                       'silane_smiles',
+        #                                       'reacted_smiles',
+        #                                       'xyz_unbound',
+        #                                       'bound',
+        #                                     'apo',
+        #                                     'apriori_ligand',
+        #                                     'ligand_data',
+        #                                     'xyz_difference',
+        #                                     'apo_difference'])
 
-            dw.writerow(x)
+            # dw.writerow(x)
         #slack_me(d['name']+' - COMPLETE')
     except Exception as err:
         warn(f'FAILED! {err.__class__.__name}: {str(err)}')
-        print(x)
-        with open(f'scores_{dataset}.csv', 'a') as w:
-            dw = csv.DictWriter(w, fieldnames=['n_id',
-                                               'original_name',
-                                               'name',
-                                               'hits',
-                                               'silane_smiles',
-                                               'reacted_smiles',
-                                               'xyz_unbound',
-                                               'bound',
-                                               'apo',
-                                               'apriori_ligand',
-                                               'ligand_data',
-                                               'xyz_difference',
-                                               'apo_difference'])
-
-            dw.writerow(d)
+        # print(x)
+        # with open(f'scores_{dataset}.csv', 'a') as w:
+        #     dw = csv.DictWriter(w, fieldnames=['n_id',
+        #                                        'original_name',
+        #                                        'name',
+        #                                        'hits',
+        #                                        'silane_smiles',
+        #                                        'reacted_smiles',
+        #                                        'xyz_unbound',
+        #                                        'bound',
+        #                                        'apo',
+        #                                        'apriori_ligand',
+        #                                        'ligand_data',
+        #                                        'xyz_difference',
+        #                                        'apo_difference'])
+        #
+        #     dw.writerow(d)
         #slack_me(d['name']+' - FAILED')
         pass
 

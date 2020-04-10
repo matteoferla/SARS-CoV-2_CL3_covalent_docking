@@ -30,7 +30,7 @@ class Hit:
         self.apo_file = os.path.join(self.hits_path, f'Mpro-{name}_0', f'Mpro-{name}_0_apo.pdb')
         self.params_file = os.path.join(self.work_path, f'{self.name}.params')
         self.con_file = os.path.join(self.work_path, f'{self.name}.con')
-        self.mol = self.load()
+        self.mol = self.load_mol()
 
     def is_covalent(self):
         f = open(self.bound_file).read()
@@ -64,9 +64,10 @@ class Hit:
             raise ValueError(f'What is >{self.covalent_atomname}<')
 
 
-    def load(self):
+    def load_mol(self):
         # bond order and atom names. Why not?
         mol = Chem.MolFromMolFile(self.mol_file)
+        mol.SetProp("_Name", self.name)
         pdb = Chem.MolFromPDBFile(self.pdb_file)
         for ma, pa in zip(mol.GetAtoms(), pdb.GetAtoms()):
             ma.SetMonomerInfo(pa.GetPDBResidueInfo())
@@ -116,7 +117,7 @@ class Hit:
 
     def create_constraint_file(self):
         with open(self.con_file,'w') as w:
-            w.write('AtomPair SG 145A NE2 41A HARMONIC 3.8 0.2\n')
+            w.write('AtomPair SG 145A NE2 41A HARMONIC 3.5 0.2\n')
             if self.is_covalent():
                 w.write(f'AtomPair SG 145A {self.covalent_atomname.strip()} 1B HARMONIC 1.8 0.2\n')
                 w.write(f'Angle CB 145A SG 145A {self.covalent_atomname.strip()} 1B HARMONIC 1.71 0.35\n')
@@ -148,7 +149,7 @@ class Hit:
         score_manager = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
         scorefxn.set_weight(score_manager.score_type_from_name("atom_pair_constraint"), 20)
         scorefxn.set_weight(score_manager.score_type_from_name("angle_constraint"), 20)
-        scorefxn.set_weight(score_manager.score_type_from_name("coordinate_constraint"), 1.0)
+        scorefxn.set_weight(score_manager.score_type_from_name("coordinate_constraint"), 1)
         relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, self.relax_cycles)
         relax.constrain_relax_to_start_coords(True)
         relax.constrain_coords(True)
