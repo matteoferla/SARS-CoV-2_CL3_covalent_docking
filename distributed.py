@@ -115,21 +115,21 @@ if __name__ == '__main__' and 1==0:
 if __name__ == '__main__':
     cores = int(os.environ['cores'])
     dataset='new'
-    with open(f'scores_{dataset}.csv', 'w') as w:
-        dw = csv.DictWriter(w, fieldnames=['n_id',
-                                              'original_name',
-                                              'name',
-                                              'hits',
-                                              'silane_smiles',
-                                              'reacted_smiles',
-                                              'xyz_unbound',
-                                              'bound',
-                                            'apo',
-                                            'apriori_ligand',
-                                            'ligand_data',
-                                            'xyz_difference',
-                                            'apo_difference'])
-        dw.writeheader()
+    # with open(f'scores_{dataset}.csv', 'w') as w:
+    #     dw = csv.DictWriter(w, fieldnames=['n_id',
+    #                                           'original_name',
+    #                                           'name',
+    #                                           'hits',
+    #                                           'silane_smiles',
+    #                                           'reacted_smiles',
+    #                                           'xyz_unbound',
+    #                                           'bound',
+    #                                         'apo',
+    #                                         'apriori_ligand',
+    #                                         'ligand_data',
+    #                                         'xyz_difference',
+    #                                         'apo_difference'])
+    #     dw.writeheader()
     data = get_smiles(file=f'new_SiH3.smi')
     with Pool(cores) as p:
         print(p.map(f, data))
