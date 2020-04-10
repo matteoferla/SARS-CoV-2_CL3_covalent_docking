@@ -134,7 +134,10 @@ class Fragmenstein:
                 print(scaffold_anchor_index, scaffold_attachment_index, anchor_index, scaffold.GetNumAtoms())
                 self.draw_nicely(combo)
             combo.AddBond(scaffold_anchor_index, scaffold_attachment_index, bond_type)
-            Chem.SanitizeMol(combo)
+            Chem.SanitizeMol(combo,
+                             sanitizeOps=Chem.rdmolops.SanitizeFlags.SANITIZE_ADJUSTHS +
+                                         Chem.rdmolops.SanitizeFlags.SANITIZE_SETAROMATICITY,
+                             catchErrors=True)
             if self._debug_draw:
                 self.draw_nicely(combo)
             scaffold = combo

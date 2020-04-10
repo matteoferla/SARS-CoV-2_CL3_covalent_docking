@@ -57,7 +57,7 @@ def f(d):
             # dw.writerow(x)
         #slack_me(d['name']+' - COMPLETE')
     except Exception as err:
-        warn(f'FAILED! {err.__class__.__name}: {str(err)}')
+        warn(f'FAILED! {err.__class__.__name__}: {str(err)}')
         # print(x)
         # with open(f'scores_{dataset}.csv', 'a') as w:
         #     dw = csv.DictWriter(w, fieldnames=['n_id',
