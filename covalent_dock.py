@@ -40,6 +40,7 @@ from collections import defaultdict, namedtuple
 class CovDock:
     apo_pdbfilename = 'apo.r.pdb'
     constraint_filename = 'cysBound.cst'
+    work_path = 'output'
 
     def __init__(self, smiles: str,name: str='ligand', refine:bool=True):
         self.name = name
@@ -54,7 +55,7 @@ class CovDock:
         # last one because of substitution
         self.CX_idx, self.SX_idx = self.thio_mol.GetSubstructMatches(Chem.MolFromSmiles('C[S-]'))[-1]
         self.dethio_mol = self.dethiolate()
-        sdffile = f'{self.name}/{self.name}.sdf'
+        sdffile = f'{self.work_path}/{self.name}/{self.name}.sdf'
         self.save_confs(self.dethio_mol, sdffile)
         self.parameterise(sdffile)  # self.pdb_mol gets assigned.
         pdbblock = self.make_initial_pdb()
@@ -141,21 +142,21 @@ class CovDock:
 
     def parameterise(self, infile: str) -> None:
         ## preventt append to preexisting
-        if os.path.exists(f'{self.name}/{self.name}_conformers.pdb'):
-            os.remove(f'{self.name}/{self.name}_conformers.pdb')
+        if os.path.exists(f'{self.work_path}/{self.name}/{self.name}_conformers.pdb'):
+            os.remove(f'{self.work_path}/{self.name}/{self.name}_conformers.pdb')
         ## make a params.
         molfile_to_params.run(infile,
                               conformers_in_one_file=True,
                               name='LIG',
                               amino_acid=None,
                               chain='B',
-                              pdb=f'{self.name}/{self.name}',
+                              pdb=f'{self.work_path}/{self.name}/{self.name}',
                               clobber=True)
         ## modify
-        self.pdb_mol = self.fix_pdb(f'{self.name}/{self.name}.pdb')
+        self.pdb_mol = self.fix_pdb(f'{self.work_path}/{self.name}/{self.name}.pdb')
         ### split into parts
         allparts = defaultdict(list)
-        with open(f'{self.name}/{self.name}.params') as r:
+        with open(f'{self.work_path}/{self.name}/{self.name}.params') as r:
             for line in r:
                 parts = line.split()
                 allparts[parts[0]].append(line)
@@ -179,17 +180,17 @@ class CovDock:
         allparts['ICOOR_INTERNAL'].append(self.get_icoor_from_ref())
         ordering = ['NAME', 'IO_STRING', 'TYPE', 'AA', 'ATOM', 'BOND_TYPE', 'CHI', 'CONNECT', 'NBR_ATOM', 'NBR_RADIUS',
                     'ICOOR_INTERNAL', 'PDB_ROTAMERS']
-        with open(f'{self.name}/{self.name}.params', 'w') as w:
+        with open(f'{self.work_path}/{self.name}/{self.name}.params', 'w') as w:
             for section in ordering:
                 for line in allparts[section]:
                     w.write(re.sub(name_of_CX + '(?!\w)', new_name, line))
 
-        with open(f'{self.name}/{self.name}_conformers.pdb') as r:
+        with open(f'{self.work_path}/{self.name}/{self.name}_conformers.pdb') as r:
             rotalib = r.read()
-        with open(f'{self.name}/{self.name}_conformers.pdb', 'w') as w:
+        with open(f'{self.work_path}/{self.name}/{self.name}_conformers.pdb', 'w') as w:
             w.write(re.sub(name_of_CX + '(?!\w)', new_name, rotalib))
         self.pdb_mol.GetAtomWithIdx(self.CX_idx).GetPDBResidueInfo().SetName(new_name)
-        Chem.MolToPDBFile(self.pdb_mol, f'{self.name}/{self.name}.pdb')
+        Chem.MolToPDBFile(self.pdb_mol, f'{self.work_path}/{self.name}/{self.name}.pdb')
         self._name_map[self.CX_idx] = new_name
         return None
 
@@ -225,7 +226,7 @@ class CovDock:
     def make_pose(self, pdbblock) -> pyrosetta.Pose:
         pose = pyrosetta.Pose()
         params_paths = pyrosetta.rosetta.utility.vector1_string()
-        params_paths.extend([f"{self.name}/{self.name}.params"])
+        params_paths.extend([f"{self.work_path}/{self.name}/{self.name}.params"])
         pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
         pyrosetta.rosetta.core.import_pose.pose_from_pdbstring(pose, pdbblock)
         return pose
@@ -252,7 +253,7 @@ class CovDock:
         relax.set_movemap_disables_packing_of_fixed_chi_positions(True)
         relax.set_movemap(movemap)
         print(f'FastRelax 2: {self.name}') #this one is non cartesian.
-        self.pose.dump_pdb(f'{self.name}/min2_{self.name}.pdb')
+        self.pose.dump_pdb(f'{self.work_path}/{self.name}/min2_{self.name}.pdb')
         self.notebook['post-min2'] = self.calculate_score()
         ## repack
         # operation = pyrosetta.rosetta.core.pack.task.operation
@@ -264,7 +265,7 @@ class CovDock:
         # packer = pyrosetta.rosetta.protocols.minimization_packing.PackRotamersMover(scorefxn)
         # packer.task_factory(tf)
         # packer.apply(self.pose)
-        # self.pose.dump_pdb(f'{self.name}/repacked_{self.name}.pdb')
+        # self.pose.dump_pdb(f'{self.work_path}/{self.name}/repacked_{self.name}.pdb')
         ### Docking
         pyrosetta.rosetta.protocols.docking.setup_foldtree(self.pose, 'A_B', pyrosetta.Vector1([1]))
         scorefxn = pyrosetta.create_score_function('ligand')
@@ -282,7 +283,7 @@ class CovDock:
         docking.apply(self.pose)
         print(f'Dock: {self.name}')
         self.notebook['docked'] = self.calculate_score()
-        self.pose.dump_pdb(f'{self.name}/docked_{self.name}.pdb')
+        self.pose.dump_pdb(f'{self.work_path}/{self.name}/docked_{self.name}.pdb')
 
     def get_ligand_selector(self):
         ligand_selector = pyrosetta.rosetta.core.select.residue_selector.ResidueNameSelector()
@@ -364,9 +365,9 @@ class CovDock:
     def score_ligand_alone(self):
         pose = pyrosetta.Pose()
         params_paths = pyrosetta.rosetta.utility.vector1_string()
-        params_paths.extend([f'{self.name}/{self.name}.params'])
+        params_paths.extend([f'{self.work_path}/{self.name}/{self.name}.params'])
         pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
-        pyrosetta.rosetta.core.import_pose.pose_from_file(pose, f'{self.name}/{self.name}.pdb')
+        pyrosetta.rosetta.core.import_pose.pose_from_file(pose, f'{self.work_path}/{self.name}/{self.name}.pdb')
         return pyrosetta.get_fa_scorefxn()(pose)
         
 

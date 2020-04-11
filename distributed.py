@@ -20,6 +20,64 @@ def slack_me(msg):
     else:
         return False
 
+def get_master(master_file) -> list:
+    master = {}
+    for line in open(master_file):
+        if line.strip == '':
+            continue
+        nid, smiles, oriname, hits = line.strip().split('\t')
+        #1	Cc1ccc(OCC(=O)N2CCN(CCCCC(=O)Nc3cnccc3C)CC2)cc1	PET-SGC-fed-1	x0107
+        master[oriname.replace(' ', '_')] = {'reacted_smiles': smiles,
+                            'n_id': int(nid),
+                            'original_name': oriname.replace(' ', '_'),
+                            'hits': hits.split(',')}
+    return master
+
+def f(d): #'name', 'hits', 'smiles' keys.
+    try:
+        from substitute import OverCov, Hit
+        Hit.hits_path = '../Mpro'
+        OverCov.hits_path = '../Mpro'
+        OverCov(**d)
+
+    except NotImplementedError as err:
+        issue = f'{err.__class__.__name__}: {err}'.replace('\n', '')
+        with open('error.txt', 'w') as w:
+            w.write(f'{name}{issue}\n')
+        print(issue)
+
+
+if __name__ == '__main__':
+    cores = int(os.environ['cores'])
+
+    master = get_master('all_submissions.smi')
+    databall = []
+    for line in open('new_SiH3.smi'):
+        if not line.strip():
+            continue
+        smiles, name = line.strip().split('\t')
+        pre = re.match('^(.*)_\w+$', name).group(1)
+        if pre not in master:
+            pass
+        else:
+            hits = master[pre]['hits']
+            databall.append({'name': name, 'hits': hits, 'smiles': smiles})
+    with Pool(cores) as p:
+        print(p.map(f, databall))
+
+
+
+
+exit(0)
+
+#########################################################################################################
+#########################################################################################################
+#########################################################################################################
+
+
+
+
+
 def g(h):
     try:
         from hit import Hit

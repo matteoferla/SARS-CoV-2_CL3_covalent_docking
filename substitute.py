@@ -17,13 +17,17 @@ from egor import Egor
 
 class OverCov(CovDock):
     hits_path = '/Users/matteo/Coding/rosettaOps/Mpro'
+    work_path = 'output'
+    if not os.path.exists(work_path):
+        os.mkdir(work_path)
 
     def __init__(self, smiles: str, hits: List, name: str = 'ligand', refine: bool = True):
         # entry attributes
         self.smiles = smiles
         self.name = name
-        if not os.path.exists(self.name):
-            os.mkdir(self.name)
+        path = os.path.join(self.work_path, self.name)
+        if not os.path.exists(path):
+            os.mkdir(path)
         if len(hits) == 0:
             warn('using regular CovDock as without hits.')
             super().__init__(smiles, name, refine=True)
@@ -52,7 +56,7 @@ class OverCov(CovDock):
             #pdbblock = self.make_placed_pdb()
             self.fragmenstein = self.make_fragmenstein()
             pdbblock = self.place_fragmenstein()
-            open(f'{self.name}/pre_{self.name}.pdb','w').write(pdbblock)
+            open(f'{self.work_path}/{self.name}/pre_{self.name}.pdb','w').write(pdbblock)
             self.make_overlap_image()
             self.pose = self.make_pose(pdbblock)
             print(f'PyRosetta loaded: {name}')
@@ -62,12 +66,12 @@ class OverCov(CovDock):
             print(f'Docked: {name}')
             # if refine:
             #     self.refine_pose()
-            self.pose.dump_pdb(f'{self.name}/holo_{self.name}.pdb')
+            self.pose.dump_pdb(f'{self.work_path}/{self.name}/holo_{self.name}.pdb')
             print(f'Holo saved: {name}')
             self.snap_shot()
             print(f'Snapped: {name}')
             self.score = self.calculate_score()
-            json.dump(self.notebook, open(f'{self.name}/{self.name}.json', 'w'))
+            json.dump(self.notebook, open(f'{self.work_path}/{self.name}/{self.name}.json', 'w'))
             print(f'Done: {name}')
 
     @classmethod
@@ -131,7 +135,7 @@ class OverCov(CovDock):
             pymol.cmd.remove('resn LIG')
             # distort positions
             pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'scaffold')
-            pymol.cmd.save(f'{self.name}/{self.name}.scaffold.pdb')
+            pymol.cmd.save(f'{self.work_path}/{self.name}/{self.name}.scaffold.pdb')
             pymol.cmd.delete('scaffold')
             pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'ligand')
             pdbblock = pymol.cmd.get_pdbstr('*')
@@ -139,7 +143,7 @@ class OverCov(CovDock):
         return 'LINK         SG  CYS A 145                 CX  LIG B   1     1555   1555  1.8\n' + pdbblock
 
 
-        open(f'{self.name}/pre_{self.name}.pdb', 'w').write(pdbblock)
+        open(f'{self.work_path}/{self.name}/pre_{self.name}.pdb', 'w').write(pdbblock)
         self.make_overlap_image()
         self.pose = self.make_pose(pdbblock)
         print(f'PyRosetta loaded: {name}')
@@ -149,12 +153,12 @@ class OverCov(CovDock):
         print(f'Docked: {name}')
         # if refine:
         #     self.refine_pose()
-        self.pose.dump_pdb(f'{self.name}/holo_{self.name}.pdb')
+        self.pose.dump_pdb(f'{self.work_path}/{self.name}/holo_{self.name}.pdb')
         print(f'Holo saved: {name}')
         self.snap_shot()
         print(f'Snapped: {name}')
         self.score = self.calculate_score()
-        json.dump(self.notebook, open(f'{self.name}/{self.name}.json', 'w'))
+        json.dump(self.notebook, open(f'{self.work_path}/{self.name}/{self.name}.json', 'w'))
         print(f'Done: {name}')
 
 
@@ -203,7 +207,7 @@ class OverCov(CovDock):
         return Chem.MolFromSmarts(res.smartsString)
 
     def write_probe(self, cid):
-        aligned_file = f'{self.name}/{self.name}.aligned.mol'
+        aligned_file = f'{self.work_path}/{self.name}/{self.name}.aligned.mol'
         # Chem.MolToMolFile(probe, aligned_file, confId=cid)
         writer = rdmolfiles.SDWriter(aligned_file)
         writer.SetKekulize(False)
@@ -264,15 +268,15 @@ class OverCov(CovDock):
             drawer.DrawMolecule(mol, highlightAtoms=overlap_probe)
             drawer.FinishDrawing()
             svg = drawer.GetDrawingText()
-            open(f'{self.name}/{self.name}@{hit.name}.svg', 'w').write(svg)
+            open(f'{self.work_path}/{self.name}/{self.name}@{hit.name}.svg', 'w').write(svg)
 
 
 
     def make_fragmenstein(self):
         ff = Fragmenstein(self.dethio_mol, [h.mol for h in self.hits])
-        Chem.MolToMolFile(ff.scaffold, f'{self.name}/scaffold.fragmenstein.mol', kekulize=False)
-        Chem.MolToMolFile(ff.chimera, f'{self.name}/chimera.fragmenstein.mol', kekulize=False)
-        Chem.MolToMolFile(ff.positioned_mol, f'{self.name}/{self.name}.fragmenstein.mol', kekulize=False)
+        Chem.MolToMolFile(ff.scaffold, f'{self.work_path}/{self.name}/scaffold.fragmenstein.mol', kekulize=False)
+        Chem.MolToMolFile(ff.chimera, f'{self.work_path}/{self.name}/chimera.fragmenstein.mol', kekulize=False)
+        Chem.MolToMolFile(ff.positioned_mol, f'{self.work_path}/{self.name}/{self.name}.fragmenstein.mol', kekulize=False)
         return ff
 
     def place_fragmenstein(self):
@@ -290,7 +294,7 @@ class OverCov(CovDock):
             pymol.cmd.remove('resn LIG')
             # distort positions
             pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'scaffold')
-            pymol.cmd.save(f'{self.name}/{self.name}.scaffold.pdb')
+            pymol.cmd.save(f'{self.work_path}/{self.name}/{self.name}.scaffold.pdb')
             pymol.cmd.delete('scaffold')
             pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'ligand')
             pdbblock = pymol.cmd.get_pdbstr('*')
@@ -306,7 +310,7 @@ class OverCov(CovDock):
         self.notebook['pre-min'] = egor.ligand_score()
         egor.minimise(10)
         self.notebook['post-min'] = egor.ligand_score()
-        self.pose.dump_pdb(f'{self.name}/min1_{self.name}.pdb')
+        self.pose.dump_pdb(f'{self.work_path}/{self.name}/min1_{self.name}.pdb')
         return egor
 
     def make_placed_pdb(self):
@@ -319,7 +323,7 @@ class OverCov(CovDock):
             pymol.cmd.delete('ref')
             pymol.cmd.remove('resn LIG')
             # distort positions
-            pymol.cmd.load(f'{self.name}/{self.name}.pdb', 'ligand')
+            pymol.cmd.load(f'{self.work_path}/{self.name}/{self.name}.pdb', 'ligand')
             # fudge_positions = self.get_fudge_positions()
             # print(fudge_positions)
             # for i, atom in enumerate(pymol.cmd.get_model('resn LIG').atom):
@@ -359,9 +363,9 @@ class OverCov(CovDock):
     def snap_shot(self):
         with pymol2.PyMOL() as pymol:
             pymol.cmd.bg_color('white')
-            pymol.cmd.load(f'{self.name}/pre_{self.name}.pdb', 'pre')
-            for k in ('min1','min2', 'repacked', 'docked'):
-                pymol.cmd.load(f'{self.name}/{k}_{self.name}.pdb', k)
+            pymol.cmd.load(f'{self.work_path}/{self.name}/pre_{self.name}.pdb', 'pre')
+            for k in ('min1','min2', 'docked'):
+                pymol.cmd.load(f'{self.work_path}/{self.name}/{k}_{self.name}.pdb', k)
                 pymol.cmd.align(k, 'pre')
             for hit in self.hits:
                 pymol.cmd.load(hit.bound_file)
@@ -373,7 +377,7 @@ class OverCov(CovDock):
             pymol.cmd.show('sticks', 'resi 145')
             pymol.cmd.show('lines', 'byres resn LIG around 4')
             pymol.cmd.zoom('resi 145 or resn LIG')
-            pymol.cmd.save(f'{self.name}/{self.name}.pse')
+            pymol.cmd.save(f'{self.work_path}/{self.name}/{self.name}.pse')
 
     @property
     def best_hit(self) -> Hit:
