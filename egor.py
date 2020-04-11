@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple, Union, Sequence
 from warnings import warn
 
 from fragmenstein import Fragmenstein
+from hit import Hit
 
 
 class Egor:
@@ -29,7 +30,8 @@ class Egor:
     * a residue name in uppercase "LIG"
     * a pyrosetta.Vector1 where 1 == the ligand.
 
-    If key_residues is None, no other residues are added... However this is probably not great as it lacks the connecting cysteine.
+    If key_residues is None, only the connecting residue is added (if present in the LINK record).
+    This is overridden if one of many options are given.
     If it is a pyrosetta.Vector1 it is assumed that 1 mean select this residue (as a result of a ``selector.apply(pose)`` operation)
     If it is a list or tuple, the elements are interpreted similarly to ligand.
 
@@ -42,7 +44,7 @@ class Egor:
     def __init__(self,
                  pose: pyrosetta.Pose,
                  constraint_file: str,
-                 ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1],
+                 ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1] = 'LIG',
                  key_residues: Union[None, Sequence[Union[int, str, Tuple[int, str]]], pyrosetta.Vector1] = None):
         """
         ...
@@ -126,7 +128,10 @@ class Egor:
                             key_residues: Union[None, Sequence[Union[int, str, Tuple[int, str]]], pyrosetta.Vector1]):
         parsed = []
         if key_residues is None:
-            pass
+            try:
+                parsed = [self.pose.residue(self.ligand_residue[0]).connect_map(1).resid()]
+            except RuntimeError:
+                warn('No covalent bond with the ligand.')
         else:
             for k in key_residues:
                 parsed.extend(self._parse_residue(k))
@@ -384,19 +389,6 @@ class Egor:
         b = scorefxn(self.pose)
         return {'xyz_unbound': x, 'xyz_bound': b, 'xyz_∆∆G': b - x}
 
-    @classmethod
-    def reanimate(cls,
-                  smiles: str,
-                  hits: List[str],
-                  constraint_file: str,
-                  ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1],
-                  key_residues: Union[None, Sequence[Union[int, str, Tuple[int, str]]], pyrosetta.Vector1] = None
-                  ):
-        mol = Chem.MolFromSmiles(smiles)
-        hits = []
-        fragmenstein = Fragmenstein(mol, hits)
-        fragmenstein.positioned_mol
-        cls.from_pdbblock()
 
 
 def test():

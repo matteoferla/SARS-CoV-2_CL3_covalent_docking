@@ -2,6 +2,8 @@ from typing import Union, List, Dict
 from covalent_dock import CovDock, pymol2, GlobalPyMOL, pyrosetta
 from hit import Hit
 
+from collections import namedtuple
+
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolAlign, rdmolfiles, rdFMCS, Draw
 
@@ -67,6 +69,108 @@ class OverCov(CovDock):
             self.score = self.calculate_score()
             json.dump(self.notebook, open(f'{self.name}/{self.name}.json', 'w'))
             print(f'Done: {name}')
+
+    @classmethod
+    def from_fragmenstein_ouput(cls, name, path, best_hit):
+        if not os.path.exists(path):
+            raise FileNotFoundError('No folder')
+        elif not os.path.exists(os.path.join(path, f'{name}.followup.mol')):
+            raise FileNotFoundError('No placed molecule')
+        elif not os.path.exists(os.path.join(path, f'{name}.thiol.mol')):
+            raise FileNotFoundError('No thio molecule')
+        else:
+            followup = Chem.MolFromMolFile(os.path.join(path, f'{name}.followup.mol'))
+            thio = Chem.MolFromMolFile(os.path.join(path, f'{name}.thiol.mol'))
+            cls.from_mols(cls,
+                          name=name,
+                          followup=followup,
+                          thio=thio)
+
+    @classmethod
+    def from_mols(cls, name: str, followup: Chem.Mol, thio: Chem.Mol, best_hit):
+        self = cls.__new__(cls)
+        self.smiles = Chem.MolToSmiles(followup, kekuleSmiles=False)
+        self.name = name
+        # cached property
+        self._index_map = None
+        self._name_map = None
+        self._best_hit = best_hit
+        self.notebook = {}
+        # operations
+        self.ori_mol = followup
+        Chem.AddHs(self.ori_mol)
+        self.thio_mol = thio
+        Chem.AddHs(self.thio_mol)
+        # Dethiolate manually. All this for a proton that will be out of place anyway.
+        self.CX_idx, self.SX_idx = self.thio_mol.GetSubstructMatches(Chem.MolFromSmiles('C[S-]'))[-1]
+        Chem.GetSSSR(thio)
+        AllChem.EmbedMultipleConfs(thio, numConfs=100)
+        AllChem.UFFOptimizeMoleculeConfs(thio, maxIters=2000)
+        AllChem.ComputeGasteigerCharges(thio)
+        AllChem.MMFFOptimizeMolecule(thio)
+        dethio = Chem.EditableMol(thio)
+        dethio.RemoveAtom(self.SX_idx)
+        self.dethio_mol = dethio.GetMol()
+        ## align ligand
+        aligned_file = 'temp.mol'
+        self.save_confs(self.dethio_mol, aligned_file)
+        print(f'SMILES converted: {name}')
+        self.parameterise(aligned_file)  # self.pdb_mol gets assigned.
+        print(f'Parameterised: {name}')
+        # pdbblock = self.make_placed_pdb()
+        for ma, pa in zip(self.dethio_mol.GetAtoms(), self.pdb_mol.GetAtoms()):
+            assert ma.GetSymbol() == pa.GetSymbol(), f'The indices do not align! {ma.GetIdx()}:{ma.GetSymbol()} vs. {pa.GetIdx()}:{pa.GetSymbol()}'
+            ma.SetMonomerInfo(pa.GetPDBResidueInfo())
+        with GlobalPyMOL() as pymol:
+            pymol.cmd.delete('*')
+            pymol.cmd.load(self.best_hit.relaxbound_file, 'apo')
+            # fix drift
+            pymol.cmd.load(self.best_hit.bound_file, 'ref')
+            pymol.cmd.align('apo', 'ref')
+            pymol.cmd.delete('ref')
+            pymol.cmd.remove('resn LIG')
+            # distort positions
+            pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'scaffold')
+            pymol.cmd.save(f'{self.name}/{self.name}.scaffold.pdb')
+            pymol.cmd.delete('scaffold')
+            pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'ligand')
+            pdbblock = pymol.cmd.get_pdbstr('*')
+            pymol.cmd.delete('*')
+        return 'LINK         SG  CYS A 145                 CX  LIG B   1     1555   1555  1.8\n' + pdbblock
+
+
+        open(f'{self.name}/pre_{self.name}.pdb', 'w').write(pdbblock)
+        self.make_overlap_image()
+        self.pose = self.make_pose(pdbblock)
+        print(f'PyRosetta loaded: {name}')
+        self.egor = self.call_egor()
+        print(f'EM: {name}')
+        self.dock_pose()
+        print(f'Docked: {name}')
+        # if refine:
+        #     self.refine_pose()
+        self.pose.dump_pdb(f'{self.name}/holo_{self.name}.pdb')
+        print(f'Holo saved: {name}')
+        self.snap_shot()
+        print(f'Snapped: {name}')
+        self.score = self.calculate_score()
+        json.dump(self.notebook, open(f'{self.name}/{self.name}.json', 'w'))
+        print(f'Done: {name}')
+
+
+
+
+
+        @classmethod
+        def reanimate(cls,
+                      mol: Chem.Mol,
+                      hits: List[Hit],
+                      constraint_file: str,
+                      ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1],
+                      key_residues: Union[None, Sequence[Union[int, str, Tuple[int, str]]], pyrosetta.Vector1] = None
+                      ):
+            fragmenstein = Fragmenstein(mol, hits)
+            fragmenstein.positioned_mol
 
     def align_probe_to_target(self) -> int:  # implace
         """
