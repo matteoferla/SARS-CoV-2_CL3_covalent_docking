@@ -65,7 +65,7 @@ class OverCov(CovDock):
             self.snap_shot()
             print(f'Snapped: {name}')
             self.score = self.calculate_score()
-            json.dump(self.notebook, open(f'{self.name}/{self.name}.json'))
+            json.dump(self.notebook, open(f'{self.name}/{self.name}.json', 'w'))
             print(f'Done: {name}')
 
     def align_probe_to_target(self) -> int:  # implace

@@ -251,20 +251,20 @@ class CovDock:
         relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, 10)
         relax.set_movemap_disables_packing_of_fixed_chi_positions(True)
         relax.set_movemap(movemap)
-        print(f'FastRelax 2: {self.name}')
+        print(f'FastRelax 2: {self.name}') #this one is non cartesian.
         self.pose.dump_pdb(f'{self.name}/min2_{self.name}.pdb')
         self.notebook['post-min2'] = self.calculate_score()
         ## repack
-        operation = pyrosetta.rosetta.core.pack.task.operation
-        allow = operation.RestrictToRepackingRLT()
-        restrict_to_focus = operation.OperateOnResidueSubset(allow,self.get_ligand_selector(), True)
-        tf = pyrosetta.rosetta.core.pack.task.TaskFactory()
-        tf.push_back(operation.PreventRepacking())
-        tf.push_back(restrict_to_focus)
-        packer = pyrosetta.rosetta.protocols.minimization_packing.PackRotamersMover(scorefxn)
-        packer.task_factory(tf)
-        packer.apply(self.pose)
-        self.pose.dump_pdb(f'{self.name}/repacked_{self.name}.pdb')
+        # operation = pyrosetta.rosetta.core.pack.task.operation
+        # allow = operation.RestrictToRepackingRLT()
+        # restrict_to_focus = operation.OperateOnResidueSubset(allow,self.get_ligand_selector(), True)
+        # tf = pyrosetta.rosetta.core.pack.task.TaskFactory()
+        # tf.push_back(operation.PreventRepacking())
+        # tf.push_back(restrict_to_focus)
+        # packer = pyrosetta.rosetta.protocols.minimization_packing.PackRotamersMover(scorefxn)
+        # packer.task_factory(tf)
+        # packer.apply(self.pose)
+        # self.pose.dump_pdb(f'{self.name}/repacked_{self.name}.pdb')
         ### Docking
         pyrosetta.rosetta.protocols.docking.setup_foldtree(self.pose, 'A_B', pyrosetta.Vector1([1]))
         scorefxn = pyrosetta.create_score_function('ligand')
