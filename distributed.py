@@ -46,7 +46,7 @@ def f(d): #'name', 'hits', 'smiles' keys.
 
     except Exception as err:
         issue = f'{err.__class__.__name__}: {err}'.replace('\n', '')
-        with open('error.txt', 'w') as w:
+        with open('error.txt', 'a') as w:
             w.write(f'{name}{issue}\n')
         print(issue)
         return err.__class__.__name__

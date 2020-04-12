@@ -267,15 +267,22 @@ class Fragmenstein:
 
         :return:
         """
-        mcs = rdFMCS.FindMCS([self.scaffold, self.initial_mol],
-                             atomCompare=rdFMCS.AtomCompare.CompareAny,
-                             bondCompare=rdFMCS.BondCompare.CompareOrder,
-                             ringMatchesRingOnly=True)
-        common = Chem.MolFromSmarts(mcs.smartsString)
-        scaffold_match = self.scaffold.GetSubstructMatch(common)
-        followup_match = self.initial_mol.GetSubstructMatch(common)
-        atomMap = [(followup_at, scaffold_at) for followup_at, scaffold_at in zip(followup_match, scaffold_match)]
-        assert followup_match, 'No matching structure? All dummy atoms'
+        for mode in (dict(atomCompare=rdFMCS.AtomCompare.CompareAny,
+                          bondCompare=rdFMCS.BondCompare.CompareOrder,
+                          ringMatchesRingOnly=True),
+                     dict(atomCompare=rdFMCS.AtomCompare.CompareAny,
+                          bondCompare=rdFMCS.BondCompare.CompareAny,
+                          ringMatchesRingOnly=False)):
+            mcs = rdFMCS.FindMCS([self.scaffold, self.initial_mol],
+                                 **mode)
+            common = Chem.MolFromSmarts(mcs.smartsString)
+            scaffold_match = self.scaffold.GetSubstructMatch(common)
+            followup_match = self.initial_mol.GetSubstructMatch(common)
+            atomMap = [(followup_at, scaffold_at) for followup_at, scaffold_at in zip(followup_match, scaffold_match)]
+            if followup_match:
+                break
+        else:
+            raise ValueError('No matching structure with hits.')
         if self._debug_draw:
             self.draw_nicely(common)
         ## make the scaffold more like the followup to avoid weird matches.
