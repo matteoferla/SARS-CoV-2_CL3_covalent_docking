@@ -35,16 +35,21 @@ def get_master(master_file) -> list:
 
 def f(d): #'name', 'hits', 'smiles' keys.
     try:
-        from substitute import OverCov, Hit
-        Hit.hits_path = '../Mpro'
-        OverCov.hits_path = '../Mpro'
-        OverCov(**d)
+        if os.path.exists(os.path.join('output', name, f'{name}.json')):
+            return 'Already'
+        else:
+            from substitute import OverCov, Hit
+            Hit.hits_path = '../Mpro'
+            OverCov.hits_path = '../Mpro'
+            OverCov(**d)
+            return 'Done'
 
     except NotImplementedError as err:
         issue = f'{err.__class__.__name__}: {err}'.replace('\n', '')
         with open('error.txt', 'w') as w:
             w.write(f'{name}{issue}\n')
         print(issue)
+        return err.__class__.__name__
 
 
 if __name__ == '__main__':
