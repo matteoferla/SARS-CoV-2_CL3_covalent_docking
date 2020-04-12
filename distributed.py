@@ -44,7 +44,7 @@ def f(d): #'name', 'hits', 'smiles' keys.
             OverCov(**d)
             return 'Done'
 
-    except NotImplementedError as err:
+    except Exception as err:
         issue = f'{err.__class__.__name__}: {err}'.replace('\n', '')
         with open('error.txt', 'w') as w:
             w.write(f'{name}{issue}\n')
