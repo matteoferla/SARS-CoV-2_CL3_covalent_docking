@@ -272,6 +272,7 @@ class Egor:
         relax.set_movemap_disables_packing_of_fixed_chi_positions(True)
         relax.cartesian(True)
         relax.constrain_relax_to_start_coords(True)  # set native causes a segfault.
+        relax.do_final_repack(False)
         return relax
 
     def get_MinMover(self) -> pyrosetta.rosetta.protocols.moves.Mover:
@@ -307,7 +308,7 @@ class Egor:
         # minimizer.cartesian is True already thanks to movemap factory.
         return minimizer
 
-    def repack_neighbors(self):
+    def repack_neighbors(self) -> None:
         # get score function. but relax the coordinate constraint.
         cc = self.coordinate_constraint
         self.coordinate_constraint = 0
