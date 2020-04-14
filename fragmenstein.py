@@ -14,7 +14,7 @@ __citation__ = ""
 ########################################################################################################################
 
 
-from typing import Dict, Union, List, Optional
+from typing import Dict, Union, List, Optional, Tuple
 from warnings import warn
 
 try:
@@ -407,7 +407,7 @@ class Fragmenstein:
             pymol.cmd.show('sticks', 'followup or chimera')
             pymol.cmd.save(filename)
 
-    def draw_nicely(self, mol, show=True, **kwargs):
+    def draw_nicely(self, mol, show=True, **kwargs) -> rdMolDraw2D.MolDraw2DSVG:
         """
         Draw with atom indices for Jupyter notebooks.
 
@@ -428,6 +428,12 @@ class Fragmenstein:
         return d
 
     def save_commonality(self, filename:Optional[str]=None):
+        """
+        Saves an SVG of the followup fragmenstein with the common atoms with the chimeric scaffold highlighted.
+
+        :param filename: optinal filename to save it as. Otherwise returns a rdMolDraw2D.MolDraw2DSVG object.
+        :return:
+        """
         mcs = rdFMCS.FindMCS([self.chimera, self.positioned_mol],
                              atomCompare=rdFMCS.AtomCompare.CompareElements,
                              bondCompare=rdFMCS.BondCompare.CompareOrder,
@@ -457,6 +463,56 @@ class Fragmenstein:
                 rdMolAlign.AlignMol(target, ref, atomMap=A2B, maxIters=500)
             else:
                 print(f'No overlap? {A2B}')
+
+    @classmethod
+    def get_combined_rmsd(cls, followup_moved: Chem.Mol, followup_placed: Optional[Chem.Mol]=None, hits: Optional[List[Chem.Mol]]= None) -> float:
+        """
+        The inbuilt RMSD calculations in RDKit align the two molecules, this does not align them.
+        This deals with the case of multiple hits.
+        For euclidean distance the square root of the sum of the differences in each coordinates is taken.
+        For a regular RMSD the still-squared distance is averaged before taking the root.
+        Here the average is done across all the atom pairs between each hit and the followup.
+        Therefore, atoms in followup that derive in the blended molecule by multiple atom are scored multiple times.
+
+        As a classmethod ``followup_placed`` and ``hits`` must be provided. But as an instance method they don't.
+
+        :param followup_moved: followup compound moved by Egor or similar
+        :param followup_placed: followup compound as placed by Fragmenstein
+        :param hits: list of hits.
+        :return: combined RMSD
+        """
+        # class or instance?
+        if followup_placed is None: # instance
+            assert hasattr(cls, '__class__'), 'if called as a classmethod the list of hits need to be provided.'
+            followup_placed = cls.positioned_mol
+        if hits is None: # instance
+            assert hasattr(cls, '__class__'), 'if called as a classmethod the list of hits need to be provided.'
+            hits = cls.hits
+        for i in range(followup_placed.GetNumAtoms()):
+            assert followup_placed.GetAtomWithIdx(i).GetSymbol() == followup_moved.GetAtomWithIdx(i).GetSymbol(), 'The atoms order is changed.'
+        if followup_moved.GetNumAtoms() > followup_placed.GetNumAtoms():
+            warn(f'Followup moved {followup_moved.GetNumAtoms()} has more atoms that followup placed {followup_placed.GetNumAtoms()}. Assuming these are hydrogens.')
+        # calculate
+        tatoms = 0
+        d=0
+        for hit in hits:
+            mapping = list(cls.get_positional_mapping(followup_placed, hit).items())
+            tatoms += len(mapping)
+            if len(mapping) == 0:
+                continue
+            d += cls._get_square_deviation(followup_moved, hit, mapping)
+        return d/tatoms ** 0.5
+
+    @classmethod
+    def get_pair_rmsd(cls, molA, molB, mapping: List[Tuple[int, int]]) -> float:
+        return (cls._get_square_deviation(molA, molB, mapping) / len(mapping)) ** 0.5
+
+    def _get_square_deviation(self, molA, molB, mapping):
+        confA = molA.GetConformer()
+        confB = molB.GetConformer()
+        return sum([(confA.GetAtomPosition(a).x - confB.GetAtomPosition(b).x) ** 2 +
+                    (confA.GetAtomPosition(a).y - confB.GetAtomPosition(b).y) ** 2 +
+                    (confA.GetAtomPosition(a).z - confB.GetAtomPosition(b).z) ** 2 for a, b in mapping])
 
 def test():
     hits = [Chem.MolFromMolFile(f'../Mpro/Mpro-{i}_0/Mpro-{i}_0.mol') for i in ('x0692', 'x0305', 'x1249')]

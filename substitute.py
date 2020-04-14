@@ -16,10 +16,13 @@ from fragmenstein import Fragmenstein
 from egor import Egor
 
 class OverCov(CovDock):
+    apo_pdbfilename = 'apo.r.pdb'
+    constraint_filename = 'cysBound.cst'
     hits_path = '/Users/matteo/Coding/rosettaOps/Mpro'
     work_path = 'output'
     if not os.path.exists(work_path):
         os.mkdir(work_path)
+    placeholder = '*' #'C[SiH3]'
 
     def __init__(self, smiles: str, hits: List, name: str = 'ligand', refine: bool = True):
         # entry attributes
@@ -43,8 +46,11 @@ class OverCov(CovDock):
             self.best_hit.relax()
             self.ori_mol = Chem.MolFromSmiles(self.smiles)
             self.thio_mol = self.thiolate()
-            # last one because of substitution
-            self.CX_idx, self.SX_idx = self.thio_mol.GetSubstructMatches(Chem.MolFromSmiles('C[S-]'))[-1]
+            # S has the highest index because of substitution, but prioritise the anteconnection atom that is a carbon
+            x = []
+            for element in ('C', 'N', 'O'):
+                x.extend(self.thio_mol.GetSubstructMatches(Chem.MolFromSmiles(element + 'C[S-]')))
+            self.CY_idx, self.CX_idx, self.SX_idx = sorted(x, key=lambda v: -v[2])[0]
             self.dethio_mol = self.dethiolate()
             ## align ligand
             cid = self.align_probe_to_target()

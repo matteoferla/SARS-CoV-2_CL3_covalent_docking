@@ -41,6 +41,7 @@ def f(d): #'name', 'hits', 'smiles' keys.
             from substitute import OverCov, Hit
             Hit.hits_path = '../Mpro'
             OverCov.hits_path = '../Mpro'
+            OverCov.placeholder = '[SiH3]'  # '*' is default
             OverCov(**d)
             return 'Done'
 
@@ -97,6 +98,7 @@ def f(d):
     print('**********************************************')
     try:
         from substitute import OverCov
+        OverCov.placeholder = '[SiH3]' # '*' is default
         print(dict(name=d['name'], hits=d['hits'], smiles=d['silane_smiles']))
         c = OverCov(name=d['name'], hits=d['hits'], smiles=d['silane_smiles'])
         # s = c.score

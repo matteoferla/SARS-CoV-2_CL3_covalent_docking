@@ -41,6 +41,7 @@ class CovDock:
     apo_pdbfilename = 'apo.r.pdb'
     constraint_filename = 'cysBound.cst'
     work_path = 'output'
+    placeholder = '*' #'[SiH3]'
 
     def __init__(self, smiles: str,name: str='ligand', refine:bool=True):
         self.name = name
@@ -52,8 +53,11 @@ class CovDock:
         # operations
         self.ori_mol = Chem.MolFromSmiles(self.smiles)
         self.thio_mol = self.thiolate()
-        # last one because of substitution
-        self.CX_idx, self.SX_idx = self.thio_mol.GetSubstructMatches(Chem.MolFromSmiles('C[S-]'))[-1]
+        # S has the highest index because of substitution, but prioritise the anteconnection atom that is a carbon
+        x = []
+        for element in ('C', 'N', 'O'):
+            x.extend(self.thio_mol.GetSubstructMatches(Chem.MolFromSmiles(element + 'C[S-]')))
+        self.CY_idx, self.CX_idx, self.SX_idx = sorted(x, key=lambda v: -v[2])[0]
         self.dethio_mol = self.dethiolate()
         sdffile = f'{self.work_path}/{self.name}/{self.name}.sdf'
         self.save_confs(self.dethio_mol, sdffile)
@@ -67,7 +71,7 @@ class CovDock:
 
     def thiolate(self) -> Chem.Mol:
         thio = AllChem.ReplaceSubstructs(self.ori_mol,
-                                         Chem.MolFromSmiles('C[SiH3]'),
+                                         Chem.MolFromSmiles('C'+self.placeholder),
                                          Chem.MolFromSmiles('C[S-]'),
                                          replacementConnectionPoint=0)[0]
         thio.UpdatePropertyCache()
@@ -132,7 +136,7 @@ class CovDock:
         angle = Chem.rdMolTransforms.GetAngleDeg(conf, self.CX_idx, self.SX_idx, neigh[0])
         distance = Chem.rdMolTransforms.GetBondLength(conf, self.CX_idx, self.SX_idx)
         torsion = Chem.rdMolTransforms.GetDihedralDeg(conf, self.CX_idx, self.SX_idx, neigh[0], grandneigh[0])
-        return f'ICOOR_INTERNAL   CONN1  {torsion:.3f} {180 - angle:.3f} {distance:.3f} ' + \
+        return f'ICOOR_INTERNAL   CONN1  {torsion:.6f} {180 - angle:.6f} {distance:.6f} ' + \
                f'{self.thio2pdb_name(self.CX_idx)} {self.thio2pdb_name(neigh[0])} {self.thio2pdb_name(grandneigh[0])}\n'
 
     def fix_pdb(self, pdbfile):
@@ -161,12 +165,17 @@ class CovDock:
                 parts = line.split()
                 allparts[parts[0]].append(line)
         ### change names
+        # the connection atom of the ligand will be called CX, CY is its neighbor oddly called herein the anteconnection atom.
         name_of_CX = self.thio2pdb_name(self.CX_idx)
-        new_name = ' CX '
+        new_name_CX = ' CX '
+        name_of_CY = self.thio2pdb_name(self.CY_idx)
+        new_name_CY = ' CY '
         ### fix partial charges.
         for li in range(len(allparts['ATOM'])):
             line = allparts['ATOM'][li]
-            rex = re.match('^ATOM\s+(\w+)(\s+\w+\s+\w+\s+)([.\d\-])*', line)
+            #ATOM  O1  ONH2  X   -0.54
+            #ATOM  H3  Hapo  X   0.10
+            rex = re.match('^ATOM\s([\s\w]{4}) (\s?\w+\s+\w+\s+?) ([.\d\-]*)$', line.strip())
             name = rex.group(1)
             for ti, n in self._name_map.items():
                 if n == name or n == name.strip() or n.strip() == name:
@@ -174,24 +183,30 @@ class CovDock:
             else:
                 raise ValueError(f'name {name} not in {list(self._name_map.values())}')
             gc = self.thio_mol.GetAtomWithIdx(ti).GetDoubleProp('_GasteigerCharge')
-            allparts['ATOM'][li] = line.replace(rex.group(2) + rex.group(3), f'{gc:.2f}')
+            newline = f'ATOM {rex.group(1)} {rex.group(2)} {gc:.2f}\n'
+            allparts['ATOM'][li] = newline
         ### add connect
         allparts['CONNECT'].append(f'CONNECT  CX\n')
         allparts['ICOOR_INTERNAL'].append(self.get_icoor_from_ref())
         ordering = ['NAME', 'IO_STRING', 'TYPE', 'AA', 'ATOM', 'BOND_TYPE', 'CHI', 'CONNECT', 'NBR_ATOM', 'NBR_RADIUS',
                     'ICOOR_INTERNAL', 'PDB_ROTAMERS']
+        def name_change_line(line):
+            for (old, new) in ((name_of_CX, new_name_CX), (name_of_CY, new_name_CY)):
+                line = re.sub(old + '(?!\w)', new, line)
+            return line
         with open(f'{self.work_path}/{self.name}/{self.name}.params', 'w') as w:
             for section in ordering:
                 for line in allparts[section]:
-                    w.write(re.sub(name_of_CX + '(?!\w)', new_name, line))
-
+                    w.write(name_change_line(line))
         with open(f'{self.work_path}/{self.name}/{self.name}_conformers.pdb') as r:
             rotalib = r.read()
         with open(f'{self.work_path}/{self.name}/{self.name}_conformers.pdb', 'w') as w:
-            w.write(re.sub(name_of_CX + '(?!\w)', new_name, rotalib))
-        self.pdb_mol.GetAtomWithIdx(self.CX_idx).GetPDBResidueInfo().SetName(new_name)
+            w.write(name_change_line(rotalib))
+        self.pdb_mol.GetAtomWithIdx(self.CX_idx).GetPDBResidueInfo().SetName(new_name_CX)
+        self.pdb_mol.GetAtomWithIdx(self.CY_idx).GetPDBResidueInfo().SetName(new_name_CY)
         Chem.MolToPDBFile(self.pdb_mol, f'{self.work_path}/{self.name}/{self.name}.pdb')
-        self._name_map[self.CX_idx] = new_name
+        self._name_map[self.CX_idx] = new_name_CX
+        self._name_map[self.CY_idx] = new_name_CY
         return None
 
     def make_initial_pdb(self):

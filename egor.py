@@ -63,7 +63,7 @@ class Egor:
                       pdbblock: str,
                       params_file: str,
                       constraint_file: str,
-                      ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1],
+                      ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1] = 'LIG',
                       key_residues: Union[None, Sequence[Union[int, str, Tuple[int, str]]], pyrosetta.Vector1] = None):
         pose = pyrosetta.Pose()
         params_paths = pyrosetta.rosetta.utility.vector1_string()
@@ -333,6 +333,8 @@ class Egor:
         lig_pos = self.ligand_residue[0]
         scorefxn = pyrosetta.rosetta.core.scoring.ScoreFunctionFactory.create_score_function("ref2015")
         data = self.pose.energies().residue_total_energies_array()  # structured numpy array
+        #this stupid line actually solves a race condition...
+        assert data.shape[0] >= lig_pos - 1, f'Ligand {lig_pos} was lost from the pose? size={data.shape}'
         i = lig_pos - 1  ##pose numbering is fortran style. while python is C++
         sfxd = {data.dtype.names[j]: data[i][j] for j in range(len(data.dtype))}
         return {'MMFF_ligand': self.MMFF_score(delta=True),
@@ -343,8 +345,8 @@ class Egor:
     def minimise(self, cycles: int = 10):
         self.repack_neighbors()
         mover = self.get_FastRelax(cycles)
-        # mover = acl.get_PertMinMover()
-        # mover = acl.get_MinMover()
+        # mover = self.get_PertMinMover()
+        # mover = self.get_MinMover()
         mover.apply(self.pose)
 
     def score_split(self, repack=False):
@@ -388,7 +390,6 @@ class Egor:
         x = scorefxn(split_pose)
         b = scorefxn(self.pose)
         return {'xyz_unbound': x, 'xyz_bound': b, 'xyz_∆∆G': b - x}
-
 
 
 def test():

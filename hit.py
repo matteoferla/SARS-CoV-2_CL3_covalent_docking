@@ -18,6 +18,7 @@ class Hit:
 
     def __init__(self, name):
         self._covalent_atomname = None
+        self._antecovalent_atomname = None
         self._name_map = None
         self._idx2name = None
         self._name2idx = None
@@ -49,19 +50,37 @@ class Hit:
                 raise ValueError('Why do you think its covalent?')
         return self._covalent_atomname
 
+    @property #cached
+    def antecovalent_atomname(self) -> Union[str, None]:
+        if self._antecovalent_atomname is None:
+            # place H neighbors last in choice.
+            s = sorted(self.mol.GetAtomWithIdx(self.covalent_idx).GetNeighbors(), key=lambda a: a.GetSymbol() == 'H')
+            name = s[0].GetPDBResidueInfo().GetName()
+            self._antecovalent_atomname = name
+        return self._antecovalent_atomname
+
+    def _get_index_from_spaced_name(self, name:str) -> int:
+        if name in self.name2idx:
+            return self.name2idx[name]
+        elif len(name) != 4:
+            return self.name2idx[' '+name.rjust(3)]
+        elif name.strip() in self.name2idx:
+            return self.name2idx[name.strip()]
+        elif name.strip() in [x.strip() for x in self.name2idx]:
+            print(f'WEIRD ATOM NAME SPACING: >{name}<')
+            return {k.strip(): v for k, v in self.name2idx.items()}[name.strip()]
+        else:
+            raise ValueError(f'What is >{name}<')
+
+
     @property
     def covalent_idx(self) -> int:
-        if self.covalent_atomname in self.name2idx:
-            return self.name2idx[self.covalent_atomname]
-        elif len(self.covalent_atomname) != 4:
-            return self.name2idx[' '+self.covalent_atomname.rjust(3)]
-        elif self.covalent_atomname.strip() in self.name2idx:
-            return self.name2idx[self.covalent_atomname.strip()]
-        elif self.covalent_atomname.strip() in [x.strip() for x in self.name2idx]:
-            print(f'WEIRD ATOM NAME SPACING: >{self.covalent_atomname}<')
-            return {k.strip(): v for k, v in self.name2idx.items()}[self.covalent_atomname.strip()]
-        else:
-            raise ValueError(f'What is >{self.covalent_atomname}<')
+        return self._get_index_from_spaced_name(self.covalent_atomname)
+
+    @property
+    def antecovalent_idx(self) -> int:
+        # one atom along.
+        return self._get_index_from_spaced_name(self.antecovalent_atomname)
 
 
     def load_mol(self):
@@ -121,6 +140,7 @@ class Hit:
             if self.is_covalent():
                 w.write(f'AtomPair SG 145A {self.covalent_atomname.strip()} 1B HARMONIC 1.8 0.2\n')
                 w.write(f'Angle CB 145A SG 145A {self.covalent_atomname.strip()} 1B HARMONIC 1.71 0.35\n')
+                w.write(f'Angle SG 145A {self.covalent_atomname.strip()} 1B {self.antecovalent_atomname.strip()} 1B HARMONIC 1.91 0.35\n')
 
     def load_pose(self):
         with pymol2.PyMOL() as pymol:
@@ -145,11 +165,12 @@ class Hit:
         return pose
 
     def do_relax(self, pose):
+        #pyrosetta.rosetta.protocols.electron_density.set_pose_and_scorefxn_for_edens_scoring
         scorefxn = pyrosetta.get_fa_scorefxn()
         score_manager = pyrosetta.rosetta.core.scoring.ScoreTypeManager()
         scorefxn.set_weight(score_manager.score_type_from_name("atom_pair_constraint"), 20)
         scorefxn.set_weight(score_manager.score_type_from_name("angle_constraint"), 20)
-        scorefxn.set_weight(score_manager.score_type_from_name("coordinate_constraint"), 1)
+        scorefxn.set_weight(score_manager.score_type_from_name("coordinate_constraint"), 5)
         relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, self.relax_cycles)
         relax.constrain_relax_to_start_coords(True)
         relax.constrain_coords(True)
@@ -226,4 +247,12 @@ class Hit:
         docking = pyrosetta.rosetta.protocols.docking.DockMCMProtocol().apply(pose)
         pose.dump_pdb(f'test_{self.name}.2.pdb')
 
-
+if __name__ == '__main__':
+    name = 'x0692'
+    Hit.hits_path = '../Mpro'
+    Hit.work_path = 'testland'
+    if not os.path.exists(Hit.work_path):
+        os.mkdir(Hit.work_path)
+    Hit.relax_cycles = 1
+    Hit('x0692').relax()
+    exit(0)
