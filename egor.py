@@ -77,7 +77,7 @@ class Egor:
                      pdbfile: str,
                      params_file: str,
                      constraint_file: str,
-                     ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1],
+                     ligand_residue: Union[str, int, Tuple[int, str], pyrosetta.Vector1] = 'LIG',
                      key_residues: Union[None, Sequence[Union[int, str, Tuple[int, str]]], pyrosetta.Vector1] = None):
         pose = pyrosetta.Pose()
         params_paths = pyrosetta.rosetta.utility.vector1_string()
@@ -260,6 +260,36 @@ class Egor:
 
     def get_FastRelax(self, cycles=1) -> pyrosetta.rosetta.protocols.moves.Mover:
         """
+        For some reason providing a template script stops it from uusing the movemap
+
+        :param cycles:
+        :return:
+        """
+        scorefxn = self._get_scorefxn("ref2015_cart")
+        movemap = self._get_movemap()
+        relax = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn, cycles)
+        # v = pyrosetta.rosetta.utility.vector1_string()
+        v = pyrosetta.rosetta.std.vector_std_string('''repeat %%nrepeats%%
+                coord_cst_weight 5.0
+                scale:fa_rep 0.092
+                min 0.01
+                scale:fa_rep 0.323
+                min 0.01
+                scale:fa_rep 0.633
+                min 0.01
+                scale:fa_rep 1
+                min 0.00001
+                accept_to_best
+                endrepeat'''.split('\n'))
+        relax.set_script_from_lines(v)
+        relax.set_movemap(movemap)
+        relax.set_movemap_disables_packing_of_fixed_chi_positions(True)
+        relax.cartesian(True)
+        relax.constrain_relax_to_start_coords(True)  # set native causes a segfault.
+        return relax
+
+    def get_old_FastRelax(self, cycles=1) -> pyrosetta.rosetta.protocols.moves.Mover:
+        """
         This is the only method that works.
 
         :param cycles:
@@ -272,7 +302,6 @@ class Egor:
         relax.set_movemap_disables_packing_of_fixed_chi_positions(True)
         relax.cartesian(True)
         relax.constrain_relax_to_start_coords(True)  # set native causes a segfault.
-        relax.do_final_repack(False)
         return relax
 
     def get_MinMover(self) -> pyrosetta.rosetta.protocols.moves.Mover:
@@ -333,6 +362,7 @@ class Egor:
     def ligand_score(self):
         lig_pos = self.ligand_residue[0]
         scorefxn = pyrosetta.rosetta.core.scoring.ScoreFunctionFactory.create_score_function("ref2015")
+        scorefxn(self.pose)
         data = self.pose.energies().residue_total_energies_array()  # structured numpy array
         #this stupid line actually solves a race condition...
         assert data.shape[0] >= lig_pos - 1, f'Ligand {lig_pos} was lost from the pose? size={data.shape}'
@@ -394,11 +424,9 @@ class Egor:
 
 
 def test():
-    acl = Egor.from_pdbfile(pdbfile='test_data/pre_2_ACL.pdb',
-                            params_file='test_data/2_ACL.params',
-                            constraint_file='test_data/MPro.cst',
-                            ligand_residue='LIG',
-                            key_residues=['145A'])
+    acl = Egor.from_pdbfile(pdbfile='output/PAU-WEI-b9b-8_NIT2/pre_PAU-WEI-b9b-8_NIT2.pdb',
+                            params_file='output/PAU-WEI-b9b-8_NIT2/PAU-WEI-b9b-8_NIT2.params',
+                            constraint_file='cysBound.noCY.cst')
     acl.coordinate_constraint = 100
     print('initial')
     print(acl.ligand_score())
@@ -418,6 +446,8 @@ def test():
     pymover.apply(acl.pose)
     print('cartesian relaxed')
     print(acl.ligand_score())
+    acl.pose.dump_pdb('egor_test.pdb')
+
 
 
 if __name__ == '__main__':

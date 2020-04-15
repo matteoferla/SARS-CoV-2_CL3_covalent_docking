@@ -72,8 +72,8 @@ class OverCov(CovDock):
             print(f'Docked: {name}')
             # if refine:
             #     self.refine_pose()
-            self.pose.dump_pdb(f'{self.work_path}/{self.name}/holo_{self.name}.pdb')
-            print(f'Holo saved: {name}')
+            self.pose.dump_pdb(f'{self.work_path}/{self.name}/docked_{self.name}.pdb')
+            print(f'Docked saved: {name}')
             self.snap_shot()
             print(f'Snapped: {name}')
             self.score = self.calculate_score()
@@ -159,8 +159,6 @@ class OverCov(CovDock):
         print(f'Docked: {name}')
         # if refine:
         #     self.refine_pose()
-        self.pose.dump_pdb(f'{self.work_path}/{self.name}/holo_{self.name}.pdb')
-        print(f'Holo saved: {name}')
         self.snap_shot()
         print(f'Snapped: {name}')
         self.score = self.calculate_score()

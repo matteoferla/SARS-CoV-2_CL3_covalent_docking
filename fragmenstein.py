@@ -318,6 +318,14 @@ class Fragmenstein:
     def percent_common(self) -> int:
         return round(self.num_common/self.initial_mol.GetNumAtoms()*100)
 
+    _i = 0
+    def save_temp(self, mol):
+        """
+        This is a silly debug-by-print debug method. drop it in where you want to spy on stuff.
+        """
+        Chem.MolToMolFile(mol, f'debug_temp{self.i}.mol', kekulize=False)
+        self._i += 1
+
     def place_followup(self, mol:Chem.Mol=None) -> Chem.Mol:
         # Note none of this malarkey: AllChem.MMFFOptimizeMolecule(ref)
         # prealignment
@@ -327,14 +335,23 @@ class Fragmenstein:
         Chem.SanitizeMol(sextant)
         AllChem.EmbedMolecule(sextant)
         AllChem.MMFFOptimizeMolecule(sextant)
-        mcs = rdFMCS.FindMCS([self.chimera, mol],
-                             atomCompare=rdFMCS.AtomCompare.CompareElements,
-                             bondCompare=rdFMCS.BondCompare.CompareOrder)
-        common = Chem.MolFromSmarts(mcs.smartsString)
-        chimera_match = self.chimera.GetSubstructMatch(common)
-        followup_match = mol.GetSubstructMatch(common)
-        atomMap = [(followup_at, chimera_at) for followup_at, chimera_at in zip(followup_match, chimera_match)]
-        assert followup_match, 'No matching structure? All dummy atoms'
+        for mode in (dict(atomCompare=rdFMCS.AtomCompare.CompareElements,
+                          bondCompare=rdFMCS.BondCompare.CompareOrder,
+                          ringMatchesRingOnly=True),
+                    dict(atomCompare=rdFMCS.AtomCompare.CompareAny,
+                          bondCompare=rdFMCS.BondCompare.CompareOrder,
+                          ringMatchesRingOnly=True),
+                     dict(atomCompare=rdFMCS.AtomCompare.CompareAny,
+                          bondCompare=rdFMCS.BondCompare.CompareAny,
+                          ringMatchesRingOnly=False)):
+            mcs = rdFMCS.FindMCS([self.chimera, mol], **mode)
+            common = Chem.MolFromSmarts(mcs.smartsString)
+            chimera_match = self.chimera.GetSubstructMatch(common)
+            followup_match = mol.GetSubstructMatch(common)
+            atomMap = [(followup_at, chimera_at) for followup_at, chimera_at in zip(followup_match, chimera_match)]
+            if len(atomMap):
+                break
+        assert atomMap, 'No matching structure? All dummy atoms'
         rdMolAlign.AlignMol(sextant, self.chimera, atomMap=atomMap, maxIters=500)
         if self._debug_draw:
             self.draw_nicely(mol)
@@ -342,7 +359,6 @@ class Fragmenstein:
             self.draw_nicely(common)
             print('followup/probe/mobile/candidate', followup_match)
             print('chimera/ref/scaffold', chimera_match)
-
         putty = Chem.Mol(sextant)
         pconf = putty.GetConformer()
         chimera_conf = self.chimera.GetConformer()
@@ -371,6 +387,7 @@ class Fragmenstein:
             sconf = sextant.GetConformer()
             if self._debug_draw:
                 print(f'alignment atoms for {unique_idx} ({team}): {sights}')
+                self.draw_nicely(sextant, highlightAtoms=[a for a,b in sights])
             for atom_idx in team:
                 pconf.SetAtomPosition(atom_idx, sconf.GetAtomPosition(atom_idx))
 
