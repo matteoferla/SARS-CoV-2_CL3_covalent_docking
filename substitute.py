@@ -43,7 +43,7 @@ class OverCov(CovDock):
             self._best_hit = None
             self.notebook = {}
             # operations
-            self.best_hit.relax()
+            #self.best_hit.relax()
             self.ori_mol = Chem.MolFromSmiles(self.smiles)
             self.thio_mol = self.thiolate()
             # S has the highest index because of substitution, but prioritise the anteconnection atom that is a carbon
