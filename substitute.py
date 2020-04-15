@@ -68,11 +68,11 @@ class OverCov(CovDock):
             print(f'PyRosetta loaded: {name}')
             self.egor = self.call_egor()
             print(f'EM: {name}')
-            self.dock_pose()
-            print(f'Docked: {name}')
-            # if refine:
-            #     self.refine_pose()
-            self.pose.dump_pdb(f'{self.work_path}/{self.name}/docked_{self.name}.pdb')
+            # self.dock_pose()
+            # print(f'Docked: {name}')
+            # # if refine:
+            # #     self.refine_pose()
+            # self.pose.dump_pdb(f'{self.work_path}/{self.name}/docked_{self.name}.pdb')
             print(f'Docked saved: {name}')
             self.snap_shot()
             print(f'Snapped: {name}')
@@ -312,7 +312,8 @@ class OverCov(CovDock):
                     key_residues=['145A']
                     )
         self.notebook['pre-min'] = egor.ligand_score()
-        egor.minimise(10)
+        mover = self.get_FastRelax(10)
+        mover.apply(self.pose)
         self.notebook['post-min'] = egor.ligand_score()
         self.pose.dump_pdb(f'{self.work_path}/{self.name}/min1_{self.name}.pdb')
         return egor
@@ -320,12 +321,14 @@ class OverCov(CovDock):
     def make_placed_pdb(self):
         with GlobalPyMOL() as pymol:
             pymol.cmd.delete('*')
-            pymol.cmd.load(self.best_hit.relaxbound_file, 'apo')
-            # fix drift
-            pymol.cmd.load(self.best_hit.bound_file, 'ref')
-            pymol.cmd.align('apo', 'ref')
-            pymol.cmd.delete('ref')
-            pymol.cmd.remove('resn LIG')
+            # pymol.cmd.load(self.best_hit.relaxbound_file, 'apo')
+            # # fix drift
+            # pymol.cmd.load(self.best_hit.bound_file, 'ref')
+            # pymol.cmd.align('apo', 'ref')
+            # pymol.cmd.delete('ref')
+            # pymol.cmd.remove('resn LIG')
+
+            pymol.cmd.load(self.best_hit.apo_file, 'apo')
             # distort positions
             pymol.cmd.load(f'{self.work_path}/{self.name}/{self.name}.pdb', 'ligand')
             # fudge_positions = self.get_fudge_positions()
@@ -368,20 +371,18 @@ class OverCov(CovDock):
         with pymol2.PyMOL() as pymol:
             pymol.cmd.bg_color('white')
             pymol.cmd.load(f'{self.work_path}/{self.name}/pre_{self.name}.pdb', 'pre')
-            for k in ('min1','min2', 'docked'):
+            for k in ('pre','min'): #('min1','min2', 'docked'):
                 pymol.cmd.load(f'{self.work_path}/{self.name}/{k}_{self.name}.pdb', k)
                 pymol.cmd.align(k, 'pre')
             for hit in self.hits:
                 pymol.cmd.load(hit.bound_file)
-            pymol.cmd.load(self.best_hit.relaxbound_file, 'mintemplate')
-            pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'scaffold')
-            pymol.cmd.align('mintemplate', 'pre')
+            # pymol.cmd.read_pdbstr(Chem.MolToPDBBlock(self.fragmenstein.positioned_mol), 'scaffold')
             pymol.cmd.remove('solvent')
             pymol.cmd.remove('resn DMS')
             pymol.cmd.show('sticks', 'resi 145')
             pymol.cmd.show('lines', 'byres resn LIG around 4')
             pymol.cmd.zoom('resi 145 or resn LIG')
-            pymol.cmd.save(f'{self.work_path}/{self.name}/{self.name}.pse')
+            pymol.cmd.save(f'{self.work_path}/{self.name}/{self.name}_protein.pse')
 
     @property
     def best_hit(self) -> Hit:

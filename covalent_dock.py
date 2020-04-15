@@ -244,6 +244,11 @@ class CovDock:
         params_paths.extend([f"{self.work_path}/{self.name}/{self.name}.params"])
         pyrosetta.generate_nonstandard_residue_set(pose, params_paths)
         pyrosetta.rosetta.core.import_pose.pose_from_pdbstring(pose, pdbblock)
+        # fix protonation of HIS41.
+        r = pose.pdb_info().pdb2pose(res=41, chain='A')
+        MutateResidue = pyrosetta.rosetta.protocols.simple_moves.MutateResidue
+        MutateResidue(target=r, new_res='HIS_D').apply(pose)
+        MutateResidue(target=r, new_res='HIS').apply(pose)
         return pose
 
     def dock_pose(self):
