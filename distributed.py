@@ -41,7 +41,7 @@ def f(d): #'name', 'hits', 'smiles' keys.
             from substitute import OverCov, Hit
             Hit.hits_path = '../Mpro'
             OverCov.hits_path = '../Mpro'
-            OverCov.placeholder = '[SiH3]'  # '*' is default
+            #OverCov.placeholder = '[SiH3]'  # '*' is default
             OverCov(**d)
             return 'Done'
 
@@ -67,7 +67,7 @@ if __name__ == '__main__':
             pass
         else:
             hits = master[pre]['hits']
-            databall.append({'name': name, 'hits': hits, 'smiles': smiles})
+            databall.append({'name': name, 'hits': hits, 'smiles': smiles.replace('[SiH3]', '*')})
     with Pool(cores) as p:
         print(p.map(f, databall))
     slack_me('All DONE!')
